@@ -5,27 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}High Scope Monitor{% endblock %}</title>
 
-    <!-- ====== Favicon ======
-         Inline SVG with the microscope emoji on an indigo rounded background.
-         Data-URI so no extra HTTP request and no static file to host. Renders
-         the same colourful glyph as the desktop's app icon.                -->
+    <!-- Favicon: indigo rounded card + 🔬 (matches the desktop app icon). -->
     <link rel="icon" type="image/svg+xml"
-          href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234f46e5'/><stop offset='1' stop-color='%233730a3'/></linearGradient></defs><rect width='64' height='64' rx='14' fill='url(%23g)'/><text x='32' y='44' font-size='38' text-anchor='middle' font-family='Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji'>🔬</text></svg>">
+          href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%230E3689'/><stop offset='1' stop-color='%230A2660'/></linearGradient></defs><rect width='64' height='64' rx='14' fill='url(%23g)'/><circle cx='52' cy='14' r='6' fill='%23FFD53A'/><text x='32' y='44' font-size='38' text-anchor='middle' font-family='Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji'>🔬</text></svg>">
+
+    <!-- Industrial Command theme — defines colour tokens, typography, KPI /
+         table / navbar styles. Loaded BEFORE Tailwind so Tailwind utility
+         classes still win when used directly in markup. -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+
+    <!-- Display + body web fonts. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
     <style>
-        body { font-family: "Segoe UI Variable", "Segoe UI", "Inter", system-ui, sans-serif; }
-        .card { @apply bg-white border border-slate-200 rounded-xl shadow-sm; }
-        .num { font-variant-numeric: tabular-nums; }
+      /* Pull theme tokens up to body so anything inside inherits the palette. */
+      body { background: var(--bg); color: var(--text); }
     </style>
 
-    <!-- ====== Marquee tab title ======
-         Continuously shifts the document title by one character every
-         320 ms so the browser tab shows a marquee-style scroll. The page-
-         specific title (LOT id, bonding number…) is woven into the rail
-         so it scrolls past too — operators glancing at the tab strip see
-         WHAT page they're on AND the "live" cue that the dashboard is up. -->
+    <!-- Marquee tab title — operators glance at the tab strip and see the
+         page-specific title scroll past with a "live" cue. -->
     <script>
     (function () {
         const PAGE_TITLE = {{ self.title()|tojson }};
@@ -42,35 +45,28 @@
     })();
     </script>
 </head>
-<body class="bg-slate-100 text-slate-900">
+<body>
 
-<header class="bg-white border-b border-slate-200 sticky top-0 z-10">
-    <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-6">
-        <a href="/" class="text-lg font-bold text-indigo-700">🔬 High Scope Monitor</a>
-        <nav class="flex gap-1 text-sm">
-            <a href="/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 text-slate-700">Dashboard</a>
-            <a href="/api/bondings" target="_blank"
-               class="px-3 py-1.5 rounded-md hover:bg-slate-100 text-slate-500 text-xs">API</a>
+<header class="hs-navbar sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-6 py-2.5 flex items-center gap-6">
+        <a href="/" class="hs-brand text-base">High Scope Monitor</a>
+        <nav class="flex gap-1 ml-2">
+            <a href="/" class="hs-nav-link">Dashboard</a>
+            <a href="/api/bondings" target="_blank" class="hs-nav-link">API</a>
         </nav>
         <div class="ml-auto flex items-center gap-3">
             {% block header_extra %}{% endblock %}
-            <!-- Unit segmented toggle. Reloads the current page with the new
-                 ?unit=… query param so server-rendered numbers + chart data
-                 are converted in one shot. The cookie sticks the choice for
-                 subsequent navigation. -->
-            <div class="text-[10px] text-slate-400 uppercase tracking-wider">unit</div>
-            <div class="inline-flex rounded-md overflow-hidden border border-slate-300">
-                {% set base_url = request.path %}
-                {% set qs_um  = request.args.to_dict() %}
-                {% set qs_mil = request.args.to_dict() %}
-                {% if qs_um.update({"unit":"um"}) %}{% endif %}
-                {% if qs_mil.update({"unit":"mil"}) %}{% endif %}
-                {% set um_classes  = "bg-indigo-600 text-white" if unit_choice == "um"  else "bg-white text-slate-600 hover:bg-slate-50" %}
-                {% set mil_classes = "bg-indigo-600 text-white" if unit_choice == "mil" else "bg-white text-slate-600 hover:bg-slate-50" %}
-                <a href="{{ base_url }}?{% for k,v in qs_um.items() %}{{ k }}={{ v }}{% if not loop.last %}&{% endif %}{% endfor %}"
-                   class="px-3 py-1 text-xs font-semibold border-r border-slate-300 {{ um_classes }}">µm</a>
-                <a href="{{ base_url }}?{% for k,v in qs_mil.items() %}{{ k }}={{ v }}{% if not loop.last %}&{% endif %}{% endfor %}"
-                   class="px-3 py-1 text-xs font-semibold {{ mil_classes }}">mil</a>
+
+            <span class="hs-unit-label text-[10px] uppercase tracking-wider">unit</span>
+            {% set qs_um  = request.args.to_dict() %}
+            {% set qs_mil = request.args.to_dict() %}
+            {% if qs_um.update({"unit":"um"}) %}{% endif %}
+            {% if qs_mil.update({"unit":"mil"}) %}{% endif %}
+            <div class="hs-unit-toggle">
+                <a href="{{ request.path }}?{% for k,v in qs_um.items() %}{{ k }}={{ v }}{% if not loop.last %}&{% endif %}{% endfor %}"
+                   class="{{ 'active' if unit_choice == 'um' else '' }}">µm</a>
+                <a href="{{ request.path }}?{% for k,v in qs_mil.items() %}{{ k }}={{ v }}{% if not loop.last %}&{% endif %}{% endfor %}"
+                   class="{{ 'active' if unit_choice == 'mil' else '' }}">mil</a>
             </div>
         </div>
     </div>
@@ -80,7 +76,7 @@
     {% block content %}{% endblock %}
 </main>
 
-<footer class="text-center text-xs text-slate-400 pb-6">
+<footer class="footer-bar text-center pb-4">
     High Scope Monitor · read-only view of measurements.db
 </footer>
 

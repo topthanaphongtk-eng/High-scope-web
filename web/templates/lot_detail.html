@@ -3,65 +3,70 @@
 
 {% block content %}
 
-<a href="/" class="text-sm text-slate-500 hover:text-slate-700">← Dashboard</a>
+<a href="/" class="text-sm hover:underline" style="color: var(--text-med)">← Dashboard</a>
 
-<header class="mt-2 mb-6">
-    <h1 class="text-2xl font-bold text-slate-900 font-mono">{{ lot_id }}</h1>
-    <p class="text-slate-500 text-sm mt-1">{{ sessions|length }} session(s) recorded.</p>
-</header>
+<div class="hs-page-header mt-3 mb-6 flex items-center justify-between">
+    <div>
+        <div class="font-mono">{{ lot_id }}</div>
+        <div class="sub">{{ sessions|length }} session(s) recorded</div>
+    </div>
+    <div class="text-right text-[11px]" style="color: rgba(255,255,255,0.6); font-weight: 400">
+        LOT detail
+    </div>
+</div>
 
 {% for s in sessions %}
-<section class="card overflow-hidden mb-6">
-    <div class="px-5 py-3 border-b border-slate-200 flex flex-wrap items-baseline gap-x-6 gap-y-1">
-        <span class="text-sm text-slate-500">{{ s.confirmed_at|fmt_dt }}</span>
-        <span class="text-xs text-slate-400">·</span>
+<section class="hs-chart-card mb-6" style="padding: 0">
+    <div class="px-5 py-3 flex flex-wrap items-baseline gap-x-6 gap-y-1" style="border-bottom: 1px solid var(--divider)">
+        <span class="text-sm" style="color: var(--text-med); font-family: var(--font-display); font-weight: 600">{{ s.confirmed_at|fmt_dt }}</span>
+        <span class="text-xs" style="color: var(--text-light)">·</span>
         <a href="/bonding/{{ s.bonding_number }}?machine={{ s.lot_location or '' }}"
-           class="text-sm font-medium hover:underline">
-            <b>{{ s.bonding_number }}</b>
-            <span class="text-violet-700">{{ s.lot_location or "—" }}</span>
+           class="text-sm hover:underline" style="color: var(--text); font-weight: 600">
+            {{ s.bonding_number }}
         </a>
-        <span class="text-xs text-slate-500">op {{ s.operator_badge }}</span>
-        {% if s.mpc %}<span class="text-xs text-slate-500">MPC {{ s.mpc }}</span>{% endif %}
-        {% if s.package %}<span class="text-xs text-slate-500">Pkg {{ s.package }}</span>{% endif %}
-        <span class="ml-auto text-[10px] text-slate-400 font-mono">{{ s.session_id }}</span>
+        <span class="hs-machine-chip">{{ s.lot_location or "—" }}</span>
+        <span class="text-xs" style="color: var(--text-light)">op {{ s.operator_badge }}</span>
+        {% if s.mpc %}<span class="text-xs" style="color: var(--text-light)">MPC {{ s.mpc }}</span>{% endif %}
+        {% if s.package %}<span class="text-xs" style="color: var(--text-light)">Pkg {{ s.package }}</span>{% endif %}
+        <span class="ml-auto text-[10px] font-mono" style="color: var(--text-light)">{{ s.session_id }}</span>
     </div>
 
     <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-            <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
+        <table class="hs-table">
+            <thead>
                 <tr>
-                    <th class="px-3 py-2 text-left">Loc</th>
-                    <th class="px-3 py-2 text-left">#</th>
-                    <th class="px-3 py-2 text-right">PAD W <span class="normal-case">({{ unit_label }})</span></th>
-                    <th class="px-3 py-2 text-right">PAD H <span class="normal-case">({{ unit_label }})</span></th>
-                    <th class="px-3 py-2 text-right">BALL d <span class="normal-case">({{ unit_label }})</span></th>
-                    <th class="px-3 py-2 text-right">GAP min <span class="normal-case">({{ unit_label }})</span></th>
-                    <th class="px-3 py-2 text-right">GAP mean <span class="normal-case">({{ unit_label }})</span></th>
-                    <th class="px-3 py-2 text-left">Conf</th>
-                    <th class="px-3 py-2 text-left">Image</th>
+                    <th>Loc</th>
+                    <th>#</th>
+                    <th class="text-right">PAD W <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="text-right">PAD H <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="text-right">BALL d <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="text-right">GAP min <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="text-right">GAP mean <span class="normal-case">({{ unit_label }})</span></th>
+                    <th>Conf</th>
+                    <th>Image</th>
                 </tr>
             </thead>
             <tbody>
             {% for r in s.rows %}
-            <tr class="border-t border-slate-100">
-                <td class="px-3 py-2 font-medium">{{ r.location }}</td>
-                <td class="px-3 py-2 text-emerald-700 font-medium">#{{ r.pad_index }}</td>
-                <td class="px-3 py-2 text-right num">{{ ((r.pad_w_um * unit_scale) if r.pad_w_um is not none else None) | fmt_num }}</td>
-                <td class="px-3 py-2 text-right num">{{ ((r.pad_h_um * unit_scale) if r.pad_h_um is not none else None) | fmt_num }}</td>
-                <td class="px-3 py-2 text-right num text-rose-700">{{ ((r.ball_d_um * unit_scale) if r.ball_d_um is not none else None) | fmt_num }}</td>
-                <td class="px-3 py-2 text-right num text-fuchsia-700">{{ ((r.gap_min_um * unit_scale) if r.gap_min_um is not none else None) | fmt_num }}</td>
-                <td class="px-3 py-2 text-right num text-fuchsia-700">{{ ((r.gap_mean_um * unit_scale) if r.gap_mean_um is not none else None) | fmt_num }}</td>
-                <td class="px-3 py-2 text-xs text-slate-500">{{ r.confidence or "—" }}</td>
-                <td class="px-3 py-2 text-xs">
+            <tr>
+                <td><span class="hs-machine-chip" style="background: rgba(46,158,79,0.10); color: var(--hs-success)">{{ r.location }}</span></td>
+                <td style="color: var(--hs-success); font-weight: 600">#{{ r.pad_index }}</td>
+                <td class="text-right num">{{ ((r.pad_w_um * unit_scale) if r.pad_w_um is not none else None) | fmt_num }}</td>
+                <td class="text-right num">{{ ((r.pad_h_um * unit_scale) if r.pad_h_um is not none else None) | fmt_num }}</td>
+                <td class="text-right num" style="color: var(--hs-danger); font-weight: 600">{{ ((r.ball_d_um * unit_scale) if r.ball_d_um is not none else None) | fmt_num }}</td>
+                <td class="text-right num" style="color: #A14BA1">{{ ((r.gap_min_um * unit_scale) if r.gap_min_um is not none else None) | fmt_num }}</td>
+                <td class="text-right num" style="color: #A14BA1">{{ ((r.gap_mean_um * unit_scale) if r.gap_mean_um is not none else None) | fmt_num }}</td>
+                <td class="text-xs" style="color: var(--text-light)">{{ r.confidence or "—" }}</td>
+                <td class="text-xs">
                     {% if r.stored_ball_path %}
                     <a target="_blank"
                        href="/image?path={{ r.stored_ball_path|replace(share_root + '\\\\', '')|replace(share_root + '/', '') }}"
-                       class="text-indigo-600 hover:underline mr-2">ball</a>
+                       class="hover:underline mr-2" style="color: var(--primary)">ball</a>
                     {% endif %}
                     {% if r.stored_pad_path %}
                     <a target="_blank"
                        href="/image?path={{ r.stored_pad_path|replace(share_root + '\\\\', '')|replace(share_root + '/', '') }}"
-                       class="text-indigo-600 hover:underline">pad</a>
+                       class="hover:underline" style="color: var(--primary)">pad</a>
                     {% endif %}
                 </td>
             </tr>
