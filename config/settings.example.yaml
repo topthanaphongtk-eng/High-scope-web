@@ -1,0 +1,22 @@
+mes:
+  wsdl_url: "http://mth-vm-asoprd/wbservice/RecordService.asmx?WSDL"
+  timeout_seconds: 5
+  wsdl_cache_dir: "./logs/wsdl_cache"
+  # Set to false on networks where a corporate firewall intercepts HTTPS
+  # and breaks cert validation for external schema imports (schemas.xmlsoap.org).
+  verify_ssl: false
+
+capture:
+  watch_root: "D:/Auto save"
+  recursive: true
+  file_patterns: ["*.tif", "*.tiff"]
+  stable_poll_ms: 200
+  stable_required_checks: 2
+
+storage:
+  shared_root: "//SERVER/qc-images"
+  compute_sha256: true
+
+app:
+  log_dir: "./logs"
+  log_level: "INFO"

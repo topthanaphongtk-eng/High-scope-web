@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}{{ bonding }} @ {{ machine }} · Trend{% endblock %}
+
+{% block content %}
+
+<a href="/" class="text-sm text-slate-500 hover:text-slate-700">← Dashboard</a>
+
+<header class="mt-2 mb-6">
+    <h1 class="text-2xl font-bold">
+        Trend ·
+        <span class="text-slate-900">{{ bonding }}</span>
+        <span class="text-slate-400 mx-2">@</span>
+        <span class="text-violet-700">{{ machine }}</span>
+    </h1>
+    <p class="text-slate-500 text-sm mt-1">{{ lots|length }} LOT(s) — current judged against prior history (3σ).</p>
+</header>
+
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="card p-5">
+        <div class="flex items-baseline justify-between mb-2">
+            <h2 class="font-semibold text-indigo-700">Ball d  avg ({{ unit_label }})</h2>
+            {% if ball_stats.mean is not none %}
+            <div class="text-xs text-slate-500">
+                <span class="text-sky-700 font-medium">x̄ {{ (ball_stats.mean * unit_scale)|fmt_num }}</span>  ·
+                <span class="text-rose-700 font-medium">UCL {{ (ball_stats.ucl * unit_scale)|fmt_num }}</span>  ·
+                <span class="text-rose-700 font-medium">LCL {{ (ball_stats.lcl * unit_scale)|fmt_num }}</span>
+            </div>
+            {% endif %}
+        </div>
+        <!-- Fixed-height wrapper prevents the responsive-canvas / parent-grows
+             feedback loop that otherwise makes the chart expand indefinitely. -->
+        <div class="relative w-full" style="height:280px">
+            <canvas id="ballChart"></canvas>
+        </div>
+    </div>
+    <div class="card p-5">
+        <div class="flex items-baseline justify-between mb-2">
+            <h2 class="font-semibold text-emerald-700">GAP min  avg ({{ unit_label }})</h2>
+            {% if gap_stats.mean is not none %}
+            <div class="text-xs text-slate-500">
+                <span class="text-sky-700 font-medium">x̄ {{ (gap_stats.mean * unit_scale)|fmt_num }}</span>  ·
+                <span class="text-rose-700 font-medium">UCL {{ (gap_stats.ucl * unit_scale)|fmt_num }}</span>  ·
+                <span class="text-rose-700 font-medium">LCL {{ (gap_stats.lcl * unit_scale)|fmt_num }}</span>
+            </div>
+            {% endif %}
+        </div>
+        <div class="relative w-full" style="height:280px">
+            <canvas id="gapChart"></canvas>
+        </div>
+    </div>
+</section>
+
+<section class="card overflow-hidden mt-6">
+    <div class="px-4 py-3 border-b border-slate-200">
+        <h2 class="font-semibold text-slate-700">Recent LOTs</h2>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
+                <tr>
+                    <th class="px-3 py-2 text-left">LOT</th>
+                    <th class="px-3 py-2 text-left">Op</th>
+                    <th class="px-3 py-2 text-right">Ball d <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="px-3 py-2 text-right">GAP min <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="px-3 py-2 text-left">Confirmed</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for l in lots|reverse %}
+            <tr class="border-t border-slate-100 hover:bg-slate-50">
+                <td class="px-3 py-2 font-mono text-indigo-700">
+                    <a href="/lot/{{ l.lot_id }}" class="hover:underline">{{ l.lot_id }}</a>
+                </td>
+                <td class="px-3 py-2 text-xs text-slate-500">{{ l.operator_badge }}</td>
+                <td class="px-3 py-2 text-right num">{{ ((l.ball_d_avg * unit_scale) if l.ball_d_avg is not none else None) | fmt_num }}</td>
+                <td class="px-3 py-2 text-right num">{{ ((l.gap_min_avg * unit_scale) if l.gap_min_avg is not none else None) | fmt_num }}</td>
+                <td class="px-3 py-2 text-xs text-slate-500">{{ l.confirmed_at|fmt_dt }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<script>
+// All numeric series are stored in µm. Apply the active unit's scale here
+// so chart axes, tooltips, and limits stay consistent with the table above.
+const UNIT_SCALE = {{ unit_scale|tojson }};
+const UNIT_LABEL = {{ unit_label|tojson }};
+const lotsRaw = {{ lots|tojson }};
+const ballStatsRaw = {{ ball_stats|tojson }};
+const gapStatsRaw = {{ gap_stats|tojson }};
+
+function scaleStats(s) {
+    if (!s || s.mean == null) return s || {};
+    return {
+        mean: s.mean * UNIT_SCALE,
+        ucl:  s.ucl  != null ? s.ucl  * UNIT_SCALE : null,
+        lcl:  s.lcl  != null ? s.lcl  * UNIT_SCALE : null,
+    };
+}
+const lots = lotsRaw.map(l => Object.assign({}, l, {
+    ball_d_avg:  l.ball_d_avg  != null ? l.ball_d_avg  * UNIT_SCALE : null,
+    gap_min_avg: l.gap_min_avg != null ? l.gap_min_avg * UNIT_SCALE : null,
+}));
+const ballStats = scaleStats(ballStatsRaw);
+const gapStats  = scaleStats(gapStatsRaw);
+
+function makeChart(ctx, lots, key, stats, color, fillColor) {
+    const labels = lots.map(l => l.lot_id.slice(-10));
+    const data   = lots.map(l => l[key]);
+
+    const limitsPlugin = {
+        id: 'limits',
+        beforeDraw(chart) {
+            if (!stats || stats.mean == null) return;
+            const {ctx, chartArea: {left, right, top, bottom}, scales: {y}} = chart;
+            const drawLine = (val, color, dashed) => {
+                if (val == null) return;
+                ctx.save();
+                ctx.beginPath();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.5;
+                if (dashed) ctx.setLineDash([6,4]);
+                const py = y.getPixelForValue(val);
+                ctx.moveTo(left, py); ctx.lineTo(right, py);
+                ctx.stroke();
+                ctx.restore();
+            };
+            // Shade ±3σ band
+            if (stats.ucl != null && stats.lcl != null) {
+                ctx.save();
+                ctx.fillStyle = fillColor;
+                ctx.globalAlpha = 0.18;
+                const yU = y.getPixelForValue(stats.ucl);
+                const yL = y.getPixelForValue(stats.lcl);
+                ctx.fillRect(left, yU, right - left, yL - yU);
+                ctx.restore();
+            }
+            drawLine(stats.mean, '#0ea5e9', false);
+            drawLine(stats.ucl,  '#dc2626', true);
+            drawLine(stats.lcl,  '#dc2626', true);
+        }
+    };
+
+    return new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'avg of 4 locs',
+                data,
+                borderColor: color,
+                backgroundColor: color + '22',
+                fill: true,
+                tension: 0.18,
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#fff',
+                pointBorderColor: color,
+                pointBorderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { ticks: { font: { family: 'monospace', size: 10 } } },
+                y: { ticks: { font: { size: 11 } } }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: items => lots[items[0].dataIndex].lot_id,
+                        label: ctx => ` ${ctx.parsed.y.toFixed(2)} ${UNIT_LABEL}`,
+                    }
+                }
+            }
+        },
+        plugins: [limitsPlugin],
+    });
+}
+
+makeChart(
+    document.getElementById('ballChart').getContext('2d'),
+    lots, 'ball_d_avg', ballStats, '#4f46e5', '#a5b4fc',
+);
+makeChart(
+    document.getElementById('gapChart').getContext('2d'),
+    lots, 'gap_min_avg', gapStats, '#16a34a', '#86efac',
+);
+</script>
+
+{% endblock %}
