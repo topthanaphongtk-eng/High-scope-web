@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}LOT {{ lot_id }} · High Scope Monitor{% endblock %}
+
+{% block content %}
+
+<a href="/" class="text-sm text-slate-500 hover:text-slate-700">← Dashboard</a>
+
+<header class="mt-2 mb-6">
+    <h1 class="text-2xl font-bold text-slate-900 font-mono">{{ lot_id }}</h1>
+    <p class="text-slate-500 text-sm mt-1">{{ sessions|length }} session(s) recorded.</p>
+</header>
+
+{% for s in sessions %}
+<section class="card overflow-hidden mb-6">
+    <div class="px-5 py-3 border-b border-slate-200 flex flex-wrap items-baseline gap-x-6 gap-y-1">
+        <span class="text-sm text-slate-500">{{ s.confirmed_at|fmt_dt }}</span>
+        <span class="text-xs text-slate-400">·</span>
+        <a href="/bonding/{{ s.bonding_number }}?machine={{ s.lot_location or '' }}"
+           class="text-sm font-medium hover:underline">
+            <b>{{ s.bonding_number }}</b>
+            <span class="text-violet-700">{{ s.lot_location or "—" }}</span>
+        </a>
+        <span class="text-xs text-slate-500">op {{ s.operator_badge }}</span>
+        {% if s.mpc %}<span class="text-xs text-slate-500">MPC {{ s.mpc }}</span>{% endif %}
+        {% if s.package %}<span class="text-xs text-slate-500">Pkg {{ s.package }}</span>{% endif %}
+        <span class="ml-auto text-[10px] text-slate-400 font-mono">{{ s.session_id }}</span>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
+                <tr>
+                    <th class="px-3 py-2 text-left">Loc</th>
+                    <th class="px-3 py-2 text-left">#</th>
+                    <th class="px-3 py-2 text-right">PAD W <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="px-3 py-2 text-right">PAD H <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="px-3 py-2 text-right">BALL d <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="px-3 py-2 text-right">GAP min <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="px-3 py-2 text-right">GAP mean <span class="normal-case">({{ unit_label }})</span></th>
+                    <th class="px-3 py-2 text-left">Conf</th>
+                    <th class="px-3 py-2 text-left">Image</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in s.rows %}
+            <tr class="border-t border-slate-100">
+                <td class="px-3 py-2 font-medium">{{ r.location }}</td>
+                <td class="px-3 py-2 text-emerald-700 font-medium">#{{ r.pad_index }}</td>
+                <td class="px-3 py-2 text-right num">{{ ((r.pad_w_um * unit_scale) if r.pad_w_um is not none else None) | fmt_num }}</td>
+                <td class="px-3 py-2 text-right num">{{ ((r.pad_h_um * unit_scale) if r.pad_h_um is not none else None) | fmt_num }}</td>
+                <td class="px-3 py-2 text-right num text-rose-700">{{ ((r.ball_d_um * unit_scale) if r.ball_d_um is not none else None) | fmt_num }}</td>
+                <td class="px-3 py-2 text-right num text-fuchsia-700">{{ ((r.gap_min_um * unit_scale) if r.gap_min_um is not none else None) | fmt_num }}</td>
+                <td class="px-3 py-2 text-right num text-fuchsia-700">{{ ((r.gap_mean_um * unit_scale) if r.gap_mean_um is not none else None) | fmt_num }}</td>
+                <td class="px-3 py-2 text-xs text-slate-500">{{ r.confidence or "—" }}</td>
+                <td class="px-3 py-2 text-xs">
+                    {% if r.stored_ball_path %}
+                    <a target="_blank"
+                       href="/image?path={{ r.stored_ball_path|replace(share_root + '\\\\', '')|replace(share_root + '/', '') }}"
+                       class="text-indigo-600 hover:underline mr-2">ball</a>
+                    {% endif %}
+                    {% if r.stored_pad_path %}
+                    <a target="_blank"
+                       href="/image?path={{ r.stored_pad_path|replace(share_root + '\\\\', '')|replace(share_root + '/', '') }}"
+                       class="text-indigo-600 hover:underline">pad</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endfor %}
+
+{% endblock %}

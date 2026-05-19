@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · High Scope Monitor{% endblock %}
+
+{% block content %}
+
+<!-- Stats row -->
+<section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    {% set stats = [
+        ("Today",  n_today,  "indigo"),
+        ("Week",   n_week,   "sky"),
+        ("Month",  n_month,  "emerald"),
+        ("Total",  n_total,  "slate"),
+    ] %}
+    {% for label, value, color in stats %}
+    <div class="card p-4">
+        <div class="text-xs uppercase tracking-wider text-slate-500">{{ label }}</div>
+        <div class="text-3xl font-bold num text-{{ color }}-700 mt-1">{{ value }}</div>
+        <div class="text-[11px] text-slate-400">LOT confirms</div>
+    </div>
+    {% endfor %}
+</section>
+
+<!-- Filter bar -->
+<form method="get" class="card p-4 mb-6 flex flex-wrap gap-3 items-end">
+    <div>
+        <label class="text-xs text-slate-500 block mb-1">Since</label>
+        <input type="date" name="since" value="{{ filter_since }}"
+               class="border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+    </div>
+    <div>
+        <label class="text-xs text-slate-500 block mb-1">Until</label>
+        <input type="date" name="until" value="{{ filter_until }}"
+               class="border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+    </div>
+    <div>
+        <label class="text-xs text-slate-500 block mb-1">Bonding</label>
+        <input type="text" name="bonding" value="{{ filter_bonding }}"
+               placeholder="A-060063-A"
+               class="border border-slate-300 rounded-md px-2 py-1.5 text-sm w-44">
+    </div>
+    <div>
+        <label class="text-xs text-slate-500 block mb-1">Machine</label>
+        <input type="text" name="machine" value="{{ filter_machine }}"
+               placeholder="MTAI_WB158"
+               class="border border-slate-300 rounded-md px-2 py-1.5 text-sm w-40">
+    </div>
+    <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-md text-sm font-medium">
+        Apply
+    </button>
+    {% if filter_since or filter_until or filter_bonding or filter_machine %}
+    <a href="/" class="text-slate-500 text-sm px-3 py-1.5 hover:text-slate-700">Clear</a>
+    {% endif %}
+</form>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+    <!-- Recent LOTs (main column) -->
+    <section class="md:col-span-2 card overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-200 flex items-center">
+            <h2 class="font-semibold text-slate-700">Recent LOTs</h2>
+            <span class="ml-2 text-xs text-slate-400">({{ lots|length }})</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
+                    <tr>
+                        <th class="px-3 py-2 text-left">LOT</th>
+                        <th class="px-3 py-2 text-left">Bonding · Machine</th>
+                        <th class="px-3 py-2 text-left">Op</th>
+                        <th class="px-3 py-2 text-right">Ball d <span class="normal-case">({{ unit_label }})</span></th>
+                        <th class="px-3 py-2 text-right">GAP min <span class="normal-case">({{ unit_label }})</span></th>
+                        <th class="px-3 py-2 text-center">Loc</th>
+                        <th class="px-3 py-2 text-left">Confirmed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for l in lots %}
+                <tr class="border-t border-slate-100 hover:bg-slate-50">
+                    <td class="px-3 py-2 font-mono text-indigo-700">
+                        <a href="/lot/{{ l.lot_id }}" class="hover:underline">{{ l.lot_id }}</a>
+                    </td>
+                    <td class="px-3 py-2 text-xs">
+                        <a href="/bonding/{{ l.bonding_number }}?machine={{ l.lot_location or '' }}"
+                           class="text-slate-700 hover:underline">
+                            <b>{{ l.bonding_number }}</b>
+                            <span class="text-slate-400"> · </span>
+                            <span class="text-violet-700">{{ l.lot_location or "—" }}</span>
+                        </a>
+                    </td>
+                    <td class="px-3 py-2 text-xs text-slate-500">{{ l.operator_badge }}</td>
+                    <td class="px-3 py-2 text-right num">{{ ((l.ball_d_avg * unit_scale) if l.ball_d_avg is not none else None) | fmt_num }}</td>
+                    <td class="px-3 py-2 text-right num">{{ ((l.gap_min_avg * unit_scale) if l.gap_min_avg is not none else None) | fmt_num }}</td>
+                    <td class="px-3 py-2 text-center text-xs text-slate-500">
+                        {{ l.locations|length }}/4
+                    </td>
+                    <td class="px-3 py-2 text-xs text-slate-500">{{ l.confirmed_at|fmt_dt }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="px-3 py-8 text-center text-slate-400">No measurements found.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Bonding × machine summary -->
+    <aside class="card overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-200">
+            <h2 class="font-semibold text-slate-700">Bonding · Machine</h2>
+        </div>
+        <ul class="divide-y divide-slate-100 text-sm max-h-[600px] overflow-y-auto">
+            {% for b in bondings %}
+            <li>
+                <a href="/bonding/{{ b.bonding }}?machine={{ b.machine if b.machine != '—' else '' }}"
+                   class="block px-4 py-3 hover:bg-slate-50">
+                    <div class="font-medium text-slate-800">{{ b.bonding }}</div>
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="text-violet-600">{{ b.machine }}</span>
+                        <span class="text-slate-400">{{ b.n }} LOT(s)</span>
+                    </div>
+                </a>
+            </li>
+            {% else %}
+            <li class="px-4 py-6 text-center text-slate-400 text-xs">No data yet.</li>
+            {% endfor %}
+        </ul>
+    </aside>
+
+</div>
+
+{% endblock %}
