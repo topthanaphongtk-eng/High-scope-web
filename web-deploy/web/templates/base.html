@@ -4,6 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}High Scope Monitor{% endblock %}</title>
+
+    <!-- ====== Favicon ======
+         Inline SVG with the microscope emoji on an indigo rounded background.
+         Data-URI so no extra HTTP request and no static file to host. Renders
+         the same colourful glyph as the desktop's app icon.                -->
+    <link rel="icon" type="image/svg+xml"
+          href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234f46e5'/><stop offset='1' stop-color='%233730a3'/></linearGradient></defs><rect width='64' height='64' rx='14' fill='url(%23g)'/><text x='32' y='44' font-size='38' text-anchor='middle' font-family='Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji'>🔬</text></svg>">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
@@ -11,6 +19,28 @@
         .card { @apply bg-white border border-slate-200 rounded-xl shadow-sm; }
         .num { font-variant-numeric: tabular-nums; }
     </style>
+
+    <!-- ====== Marquee tab title ======
+         Continuously shifts the document title by one character every
+         320 ms so the browser tab shows a marquee-style scroll. The page-
+         specific title (LOT id, bonding number…) is woven into the rail
+         so it scrolls past too — operators glancing at the tab strip see
+         WHAT page they're on AND the "live" cue that the dashboard is up. -->
+    <script>
+    (function () {
+        const PAGE_TITLE = {{ self.title()|tojson }};
+        const RAIL = "  🔬  " + PAGE_TITLE + "  ·  Bond-ball QC live  ·  High Scope Monitor  ·  ";
+        let pos = 0;
+        function step() {
+            document.title = RAIL.slice(pos) + RAIL.slice(0, pos);
+            pos = (pos + 1) % RAIL.length;
+        }
+        document.addEventListener("DOMContentLoaded", () => {
+            step();
+            setInterval(step, 320);
+        });
+    })();
+    </script>
 </head>
 <body class="bg-slate-100 text-slate-900">
 
