@@ -90,21 +90,32 @@
     </div>
   </div>
 
+  {# ---- 14-day sparkline ---------------------------------------------------
+     Bar height is computed in PIXELS (auto-scaled to peak) so a quiet day on
+     a slow week is still visible. Outline of how it scales:
+       chart area = 70 px           total drawable bar zone
+       lift       = 4 px             always-visible minimum so zero days read as "nothing logged"
+       y(n) = round(lift + (n / peak) * (chart - lift))
+     Result: peak day fills the column, idle days show a faint baseline line. #}
   <div class="hs-stat-card md:col-span-2" data-accent="indigo">
     <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-semibold" style="color: var(--text-med); font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.4px;">Last 14 days · LOT confirms</h3>
       <span class="text-[10px]" style="color: var(--text-light)">peak {{ spark_max }}</span>
     </div>
-    <div class="flex items-end gap-1 h-20">
+    {% set chart_h = 70 %}
+    {% set lift = 4 %}
+    <div class="grid gap-1" style="grid-template-columns: repeat({{ spark|length }}, minmax(0, 1fr)); height: {{ chart_h + 16 }}px">
       {% for s in spark %}
-      <div class="flex-1 flex flex-col items-center gap-1 group">
+      {% set bar_h = (lift + (s.n / spark_max) * (chart_h - lift))|round(0, 'floor')|int %}
+      <div class="flex flex-col items-center justify-end group h-full">
         <div class="w-full rounded-t spark-bar relative"
-             style="height: {{ ((s.n / spark_max) * 100)|round(0, 'floor') }}%; min-height: 2px; background: linear-gradient(180deg, var(--primary), #2456B8);">
-          <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-semibold opacity-0 group-hover:opacity-100 transition" style="color: var(--text)">
-            {{ s.n }}
-          </div>
+             style="height: {{ bar_h }}px;
+                    background: linear-gradient(180deg, var(--primary) 0%, #2456B8 60%, #5680E8 100%);
+                    box-shadow: 0 1px 2px rgba(14, 54, 137, 0.25);">
+          <div class="absolute left-1/2 -translate-x-1/2 -top-4 text-[10px] font-bold opacity-0 group-hover:opacity-100 transition"
+               style="color: var(--primary)">{{ s.n }}</div>
         </div>
-        <div class="text-[8px]" style="color: var(--text-light)">{{ s.label }}</div>
+        <div class="text-[9px] mt-1" style="color: var(--text-light)">{{ s.label }}</div>
       </div>
       {% endfor %}
     </div>
