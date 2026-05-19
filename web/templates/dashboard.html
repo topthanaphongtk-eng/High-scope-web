@@ -3,128 +3,270 @@
 
 {% block content %}
 
-<!-- Stats row -->
+<style>
+  /* Local touches that make the dashboard pop without bloating base.html. */
+  .stat-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 20px; }
+  .stat-card .icon-pill { width: 38px; height: 38px; border-radius: 10px; display:inline-flex; align-items:center; justify-content:center; font-size: 18px; }
+  .delta-up   { color: #15803d; background: #dcfce7; }
+  .delta-down { color: #b91c1c; background: #fee2e2; }
+  .delta-flat { color: #475569; background: #f1f5f9; }
+  .spark-bar  { transition: height 0.2s ease; }
+  .lot-row:hover { background: #f8fafc; }
+  .loc-dot    { width: 7px; height: 7px; border-radius: 50%; display:inline-block; }
+  .quality-good   { color: #15803d; }
+  .quality-watch  { color: #b45309; }
+  .quality-poor   { color: #b91c1c; }
+</style>
+
+<!-- ============== Hero stats: 4 cards ============== -->
 <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-    {% set stats = [
-        ("Today",  n_today,  "indigo"),
-        ("Week",   n_week,   "sky"),
-        ("Month",  n_month,  "emerald"),
-        ("Total",  n_total,  "slate"),
-    ] %}
-    {% for label, value, color in stats %}
-    <div class="card p-4">
-        <div class="text-xs uppercase tracking-wider text-slate-500">{{ label }}</div>
-        <div class="text-3xl font-bold num text-{{ color }}-700 mt-1">{{ value }}</div>
-        <div class="text-[11px] text-slate-400">LOT confirms</div>
+  {% set stats = [
+      ("Today",       n_today,  delta_today,  "📅", "indigo",  "from-indigo-50 to-white"),
+      ("This week",   n_week,   delta_week,   "📊", "sky",     "from-sky-50 to-white"),
+      ("This month",  n_month,  delta_month,  "🗓️", "emerald", "from-emerald-50 to-white"),
+      ("All time",    n_total,  none,         "💾", "slate",   "from-slate-50 to-white"),
+  ] %}
+  {% for label, value, d, icon, color, grad in stats %}
+  <div class="stat-card relative overflow-hidden">
+    <div class="absolute inset-0 bg-gradient-to-br {{ grad }} opacity-60"></div>
+    <div class="relative">
+      <div class="flex items-center justify-between">
+        <span class="icon-pill bg-{{ color }}-100">{{ icon }}</span>
+        {% if d and d.pct is not none %}
+          {% set delta_class = "delta-up" if d.dir == "up" else ("delta-down" if d.dir == "down" else "delta-flat") %}
+          <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full {{ delta_class }}">
+            {%- if d.dir == "up" %}↑ {% elif d.dir == "down" %}↓ {% else %}— {% endif -%}
+            {{ d.pct|abs }}%
+          </span>
+        {% endif %}
+      </div>
+      <div class="mt-3 text-xs uppercase tracking-wider text-slate-500">{{ label }}</div>
+      <div class="text-3xl font-bold num text-{{ color }}-700 mt-0.5">{{ value }}</div>
+      <div class="text-[11px] text-slate-400">LOT confirms</div>
     </div>
-    {% endfor %}
+  </div>
+  {% endfor %}
 </section>
 
-<!-- Filter bar -->
-<form method="get" class="card p-4 mb-6 flex flex-wrap gap-3 items-end">
-    <div>
-        <label class="text-xs text-slate-500 block mb-1">Since</label>
-        <input type="date" name="since" value="{{ filter_since }}"
-               class="border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+<!-- ============== Quality pulse + 14-day sparkline ============== -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+
+  <!-- Today's quality pulse -->
+  <div class="stat-card md:col-span-1">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-sm font-semibold text-slate-700">Today's pulse</h3>
+      <span class="text-[10px] text-slate-400">{{ pulse.operators }} operator(s)</span>
     </div>
-    <div>
-        <label class="text-xs text-slate-500 block mb-1">Until</label>
-        <input type="date" name="until" value="{{ filter_until }}"
-               class="border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-slate-500">Ball d avg</div>
+        <div class="text-2xl font-bold num text-rose-700">
+          {{ ((pulse.ball_avg * unit_scale) if pulse.ball_avg is not none else None) | fmt_num }}
+          <span class="text-xs font-normal text-slate-400 normal-case">{{ unit_label }}</span>
+        </div>
+        {% if pulse.ball_avg is not none and pulse.ball_avg_y is not none %}
+          {% set bd = pulse.ball_avg - pulse.ball_avg_y %}
+          <div class="text-[10px] text-slate-500">
+            <span class="{% if bd > 0 %}text-emerald-600{% elif bd < 0 %}text-rose-600{% endif %}">
+              {{ '+' if bd > 0 else '' }}{{ '%.2f'|format(bd * unit_scale) }}
+            </span> vs yesterday
+          </div>
+        {% endif %}
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-slate-500">Gap min avg</div>
+        <div class="text-2xl font-bold num text-fuchsia-700">
+          {{ ((pulse.gap_avg * unit_scale) if pulse.gap_avg is not none else None) | fmt_num }}
+          <span class="text-xs font-normal text-slate-400 normal-case">{{ unit_label }}</span>
+        </div>
+        {% if pulse.gap_avg is not none and pulse.gap_avg_y is not none %}
+          {% set gd = pulse.gap_avg - pulse.gap_avg_y %}
+          <div class="text-[10px] text-slate-500">
+            <span class="{% if gd > 0 %}text-emerald-600{% elif gd < 0 %}text-rose-600{% endif %}">
+              {{ '+' if gd > 0 else '' }}{{ '%.2f'|format(gd * unit_scale) }}
+            </span> vs yesterday
+          </div>
+        {% endif %}
+      </div>
     </div>
-    <div>
-        <label class="text-xs text-slate-500 block mb-1">Bonding</label>
-        <input type="text" name="bonding" value="{{ filter_bonding }}"
-               placeholder="A-060063-A"
-               class="border border-slate-300 rounded-md px-2 py-1.5 text-sm w-44">
+  </div>
+
+  <!-- 14-day sparkline -->
+  <div class="stat-card md:col-span-2">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold text-slate-700">Last 14 days · LOT confirms</h3>
+      <span class="text-[10px] text-slate-400">peak {{ spark_max }}</span>
     </div>
-    <div>
-        <label class="text-xs text-slate-500 block mb-1">Machine</label>
-        <input type="text" name="machine" value="{{ filter_machine }}"
-               placeholder="MTAI_WB158"
-               class="border border-slate-300 rounded-md px-2 py-1.5 text-sm w-40">
+    <div class="flex items-end gap-1 h-16">
+      {% for s in spark %}
+      <div class="flex-1 flex flex-col items-center gap-1 group">
+        <div class="w-full bg-indigo-100 rounded-t spark-bar relative"
+             style="height: {{ ((s.n / spark_max) * 100)|round(0, 'floor') }}%; min-height: 2px;">
+          <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] text-slate-700 font-semibold opacity-0 group-hover:opacity-100 transition">
+            {{ s.n }}
+          </div>
+          <div class="w-full h-full rounded-t bg-gradient-to-t from-indigo-500 to-indigo-300"></div>
+        </div>
+        <div class="text-[8px] text-slate-400">{{ s.label }}</div>
+      </div>
+      {% endfor %}
     </div>
-    <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-md text-sm font-medium">
-        Apply
-    </button>
-    {% if filter_since or filter_until or filter_bonding or filter_machine %}
+  </div>
+
+</section>
+
+<!-- ============== Filter bar ============== -->
+<form method="get" class="stat-card mb-6 flex flex-wrap gap-3 items-end" style="padding: 14px 18px">
+  <div>
+    <label class="text-[10px] uppercase tracking-wider text-slate-500 block mb-1">Since</label>
+    <input type="date" name="since" value="{{ filter_since }}"
+           class="border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+  </div>
+  <div>
+    <label class="text-[10px] uppercase tracking-wider text-slate-500 block mb-1">Until</label>
+    <input type="date" name="until" value="{{ filter_until }}"
+           class="border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+  </div>
+  <div>
+    <label class="text-[10px] uppercase tracking-wider text-slate-500 block mb-1">Bonding</label>
+    <input type="text" name="bonding" value="{{ filter_bonding }}"
+           placeholder="A-060063-A"
+           class="border border-slate-300 rounded-md px-2 py-1.5 text-sm w-44">
+  </div>
+  <div>
+    <label class="text-[10px] uppercase tracking-wider text-slate-500 block mb-1">Machine</label>
+    <input type="text" name="machine" value="{{ filter_machine }}"
+           placeholder="MTAI_WB158"
+           class="border border-slate-300 rounded-md px-2 py-1.5 text-sm w-40">
+  </div>
+  <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-md text-sm font-medium">
+    Apply
+  </button>
+  {% if active_filter %}
     <a href="/" class="text-slate-500 text-sm px-3 py-1.5 hover:text-slate-700">Clear</a>
-    {% endif %}
+  {% endif %}
+  <span class="ml-auto text-xs text-slate-400">{{ lots|length }} LOT(s) match</span>
 </form>
 
+<!-- ============== Body: recent LOTs + bonding sidebar ============== -->
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 
-    <!-- Recent LOTs (main column) -->
-    <section class="md:col-span-2 card overflow-hidden">
-        <div class="px-4 py-3 border-b border-slate-200 flex items-center">
-            <h2 class="font-semibold text-slate-700">Recent LOTs</h2>
-            <span class="ml-2 text-xs text-slate-400">({{ lots|length }})</span>
-        </div>
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
-                    <tr>
-                        <th class="px-3 py-2 text-left">LOT</th>
-                        <th class="px-3 py-2 text-left">Bonding · Machine</th>
-                        <th class="px-3 py-2 text-left">Op</th>
-                        <th class="px-3 py-2 text-right">Ball d <span class="normal-case">({{ unit_label }})</span></th>
-                        <th class="px-3 py-2 text-right">GAP min <span class="normal-case">({{ unit_label }})</span></th>
-                        <th class="px-3 py-2 text-center">Loc</th>
-                        <th class="px-3 py-2 text-left">Confirmed</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for l in lots %}
-                <tr class="border-t border-slate-100 hover:bg-slate-50">
-                    <td class="px-3 py-2 font-mono text-indigo-700">
-                        <a href="/lot/{{ l.lot_id }}" class="hover:underline">{{ l.lot_id }}</a>
-                    </td>
-                    <td class="px-3 py-2 text-xs">
-                        <a href="/bonding/{{ l.bonding_number }}?machine={{ l.lot_location or '' }}"
-                           class="text-slate-700 hover:underline">
-                            <b>{{ l.bonding_number }}</b>
-                            <span class="text-slate-400"> · </span>
-                            <span class="text-violet-700">{{ l.lot_location or "—" }}</span>
-                        </a>
-                    </td>
-                    <td class="px-3 py-2 text-xs text-slate-500">{{ l.operator_badge }}</td>
-                    <td class="px-3 py-2 text-right num">{{ ((l.ball_d_avg * unit_scale) if l.ball_d_avg is not none else None) | fmt_num }}</td>
-                    <td class="px-3 py-2 text-right num">{{ ((l.gap_min_avg * unit_scale) if l.gap_min_avg is not none else None) | fmt_num }}</td>
-                    <td class="px-3 py-2 text-center text-xs text-slate-500">
-                        {{ l.locations|length }}/4
-                    </td>
-                    <td class="px-3 py-2 text-xs text-slate-500">{{ l.confirmed_at|fmt_dt }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="7" class="px-3 py-8 text-center text-slate-400">No measurements found.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </section>
-
-    <!-- Bonding × machine summary -->
-    <aside class="card overflow-hidden">
-        <div class="px-4 py-3 border-b border-slate-200">
-            <h2 class="font-semibold text-slate-700">Bonding · Machine</h2>
-        </div>
-        <ul class="divide-y divide-slate-100 text-sm max-h-[600px] overflow-y-auto">
-            {% for b in bondings %}
-            <li>
-                <a href="/bonding/{{ b.bonding }}?machine={{ b.machine if b.machine != '—' else '' }}"
-                   class="block px-4 py-3 hover:bg-slate-50">
-                    <div class="font-medium text-slate-800">{{ b.bonding }}</div>
-                    <div class="flex items-center justify-between text-xs">
-                        <span class="text-violet-600">{{ b.machine }}</span>
-                        <span class="text-slate-400">{{ b.n }} LOT(s)</span>
-                    </div>
+  <!-- Recent LOTs -->
+  <section class="md:col-span-2 stat-card overflow-hidden" style="padding: 0">
+    <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+      <h2 class="font-semibold text-slate-700">Recent LOTs</h2>
+      <span class="text-[10px] text-slate-400 uppercase tracking-wider">latest first</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500 text-[10px] tracking-wider uppercase">
+          <tr>
+            <th class="px-4 py-2.5 text-left">LOT  ·  Bonding</th>
+            <th class="px-3 py-2.5 text-left">Machine</th>
+            <th class="px-3 py-2.5 text-left">Op</th>
+            <th class="px-3 py-2.5 text-center">Locations</th>
+            <th class="px-3 py-2.5 text-right">Ball d <span class="normal-case">({{ unit_label }})</span></th>
+            <th class="px-3 py-2.5 text-right">GAP min <span class="normal-case">({{ unit_label }})</span></th>
+            <th class="px-3 py-2.5 text-left">Confirmed</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for l in lots %}
+          {% set loc_count = l.locations|length %}
+          {% set status_cls = "bg-emerald-500" if loc_count == 4 else ("bg-amber-500" if loc_count >= 2 else "bg-rose-500") %}
+          {% set ops = l.operator_badge[:2] if l.operator_badge else "—" %}
+        <tr class="lot-row border-t border-slate-100">
+          <td class="px-4 py-3 align-top">
+            <div class="flex items-start gap-2.5">
+              <span class="mt-1.5 w-1.5 h-1.5 rounded-full {{ status_cls }}"></span>
+              <div>
+                <a href="/lot/{{ l.lot_id }}" class="font-mono text-indigo-700 hover:underline text-[13px]">
+                  {{ l.lot_id }}
                 </a>
-            </li>
-            {% else %}
-            <li class="px-4 py-6 text-center text-slate-400 text-xs">No data yet.</li>
-            {% endfor %}
-        </ul>
-    </aside>
+                <div class="text-[11px] text-slate-500 mt-0.5">
+                  <a href="/bonding/{{ l.bonding_number }}?machine={{ l.lot_location or '' }}"
+                     class="hover:text-slate-700">
+                    {{ l.bonding_number or "—" }}
+                  </a>
+                </div>
+              </div>
+            </div>
+          </td>
+          <td class="px-3 py-3 align-top">
+            <span class="inline-block px-2 py-0.5 rounded bg-violet-50 text-violet-700 text-[11px] font-medium">
+              {{ l.lot_location or "—" }}
+            </span>
+          </td>
+          <td class="px-3 py-3 align-top">
+            <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-200 text-slate-600 text-[10px] font-semibold uppercase"
+                  title="{{ l.operator_badge }}">{{ ops }}</span>
+          </td>
+          <td class="px-3 py-3 align-top text-center">
+            <div class="inline-flex gap-1">
+              {% for code in ["TL", "TR", "BL", "BR"] %}
+                {% if code in l.locations %}
+                  <span class="loc-dot bg-emerald-500" title="{{ code }} measured"></span>
+                {% else %}
+                  <span class="loc-dot bg-slate-200" title="{{ code }} not measured"></span>
+                {% endif %}
+              {% endfor %}
+            </div>
+            <div class="text-[10px] text-slate-400 mt-1">{{ loc_count }}/4</div>
+          </td>
+          <td class="px-3 py-3 align-top text-right num font-medium">
+            {{ ((l.ball_d_avg * unit_scale) if l.ball_d_avg is not none else None) | fmt_num }}
+          </td>
+          <td class="px-3 py-3 align-top text-right num font-medium">
+            {{ ((l.gap_min_avg * unit_scale) if l.gap_min_avg is not none else None) | fmt_num }}
+          </td>
+          <td class="px-3 py-3 align-top text-[11px] text-slate-500 whitespace-nowrap">
+            {{ l.confirmed_at|fmt_dt }}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="px-4 py-12 text-center text-slate-400">
+            No measurements found for this filter.
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Bonding × Machine sidebar -->
+  <aside class="stat-card overflow-hidden" style="padding: 0">
+    <div class="px-5 py-4 border-b border-slate-100">
+      <h2 class="font-semibold text-slate-700">Bonding · Machine</h2>
+      <div class="text-[10px] text-slate-400 uppercase tracking-wider mt-0.5">most recent first</div>
+    </div>
+    <ul class="divide-y divide-slate-100 max-h-[640px] overflow-y-auto">
+      {% for b in bondings %}
+      <li>
+        <a href="/bonding/{{ b.bonding }}?machine={{ b.machine if b.machine != '—' else '' }}"
+           class="block px-5 py-3 hover:bg-slate-50 transition">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-mono text-[13px] text-slate-800 truncate">{{ b.bonding }}</span>
+            <span class="text-[10px] text-slate-400 whitespace-nowrap">{{ b.n }}×</span>
+          </div>
+          <div class="flex items-center justify-between gap-2 mt-1">
+            <span class="inline-block px-2 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-medium">
+              {{ b.machine }}
+            </span>
+            {% if b.ball_avg is not none %}
+            <span class="text-[10px] text-slate-500 num">
+              ⌀ {{ (b.ball_avg * unit_scale)|fmt_num }} <span class="normal-case">{{ unit_label }}</span>
+            </span>
+            {% endif %}
+          </div>
+        </a>
+      </li>
+      {% else %}
+      <li class="px-5 py-12 text-center text-slate-400 text-xs">No bondings yet.</li>
+      {% endfor %}
+    </ul>
+  </aside>
 
 </div>
 

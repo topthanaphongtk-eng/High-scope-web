@@ -215,7 +215,7 @@ def _trend_stats(values: list[float]) -> dict[str, float | None]:
 
 @app.route("/")
 def dashboard():
-    """Landing page: overview stats + recent LOTs table."""
+    """Landing page: hero stat cards + recent LOTs + bonding sidebar."""
     since = _parse_date(request.args.get("since"))
     until = _parse_date(request.args.get("until"))
     bonding = request.args.get("bonding") or None
@@ -227,36 +227,105 @@ def dashboard():
     )
     lots = _aggregate_per_lot(rows)
 
-    # Top-line stats
+    # ---- Time buckets ----
     now = datetime.now()
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today      = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday  = today - timedelta(days=1)
     week_start = today - timedelta(days=today.weekday())
-    month_start = today.replace(day=1)
-    n_today = sum(1 for l in lots if l["confirmed_at"] >= today.isoformat())
-    n_week  = sum(1 for l in lots if l["confirmed_at"] >= week_start.isoformat())
-    n_month = sum(1 for l in lots if l["confirmed_at"] >= month_start.isoformat())
+    last_week_start = week_start - timedelta(days=7)
+    month_start     = today.replace(day=1)
+    last_month_end  = month_start
+    last_month_start = (month_start - timedelta(days=1)).replace(day=1)
 
-    # Bonding × machine summary for sidebar.
-    bonding_summary: dict[tuple[str, str], int] = {}
+    def in_range(lo: datetime, hi: datetime) -> int:
+        return sum(
+            1 for l in lots
+            if lo.isoformat() <= l["confirmed_at"] < hi.isoformat()
+        )
+
+    n_today        = in_range(today, today + timedelta(days=1))
+    n_yesterday    = in_range(yesterday, today)
+    n_week         = in_range(week_start, week_start + timedelta(days=7))
+    n_last_week    = in_range(last_week_start, week_start)
+    n_month        = in_range(month_start, today + timedelta(days=1))
+    n_last_month   = in_range(last_month_start, last_month_end)
+
+    def delta(curr: int, prev: int) -> dict:
+        if prev == 0:
+            return {"pct": None, "dir": "neutral", "abs": curr - prev}
+        diff = curr - prev
+        return {
+            "pct": round(diff / prev * 100),
+            "dir": "up" if diff > 0 else "down" if diff < 0 else "neutral",
+            "abs": diff,
+        }
+
+    # ---- 14-day sparkline (one bar per day) ----
+    spark = []
+    for i in range(13, -1, -1):
+        d = today - timedelta(days=i)
+        n = in_range(d, d + timedelta(days=1))
+        spark.append({"label": d.strftime("%m-%d"), "n": n})
+    spark_max = max((s["n"] for s in spark), default=0) or 1
+
+    # ---- Quality pulse (today's avg ball d / gap min, vs yesterday) ----
+    def avg_metric(rows_in: list[dict], key: str) -> float | None:
+        vals = [l[key] for l in rows_in if l.get(key) is not None]
+        return (sum(vals) / len(vals)) if vals else None
+
+    today_lots = [
+        l for l in lots
+        if today.isoformat() <= l["confirmed_at"] < (today + timedelta(days=1)).isoformat()
+    ]
+    yest_lots = [
+        l for l in lots
+        if yesterday.isoformat() <= l["confirmed_at"] < today.isoformat()
+    ]
+    pulse = {
+        "ball_avg":     avg_metric(today_lots, "ball_d_avg"),
+        "ball_avg_y":   avg_metric(yest_lots, "ball_d_avg"),
+        "gap_avg":      avg_metric(today_lots, "gap_min_avg"),
+        "gap_avg_y":    avg_metric(yest_lots, "gap_min_avg"),
+        "operators":    len({l["operator_badge"] for l in today_lots}),
+    }
+
+    # ---- Bonding × machine summary for sidebar (with last-seen + count) ----
+    bonding_acc: dict[tuple[str, str], dict] = {}
     for l in lots:
         key = (l["bonding_number"] or "—", l["lot_location"] or "—")
-        bonding_summary[key] = bonding_summary.get(key, 0) + 1
-    bondings = sorted(
-        ({"bonding": b, "machine": m, "n": n}
-         for (b, m), n in bonding_summary.items()),
-        key=lambda x: -x["n"],
-    )[:30]
+        b = bonding_acc.setdefault(key, {
+            "bonding": key[0], "machine": key[1],
+            "n": 0, "last_seen": l["confirmed_at"],
+            "ball_avgs": [],
+        })
+        b["n"] += 1
+        if l["confirmed_at"] > b["last_seen"]:
+            b["last_seen"] = l["confirmed_at"]
+        if l.get("ball_d_avg") is not None:
+            b["ball_avgs"].append(l["ball_d_avg"])
+    bondings_list: list[dict] = []
+    for b in bonding_acc.values():
+        ball_v = b.pop("ball_avgs")
+        b["ball_avg"] = (sum(ball_v) / len(ball_v)) if ball_v else None
+        bondings_list.append(b)
+    bondings_list.sort(key=lambda b: b["last_seen"], reverse=True)
 
     return render_template(
         "dashboard.html",
         lots=lots[:200],
         n_today=n_today, n_week=n_week, n_month=n_month,
         n_total=len(lots),
-        bondings=bondings,
+        delta_today=delta(n_today, n_yesterday),
+        delta_week=delta(n_week, n_last_week),
+        delta_month=delta(n_month, n_last_month),
+        spark=spark, spark_max=spark_max,
+        pulse=pulse,
+        bondings=bondings_list[:12],
         filter_since=request.args.get("since", ""),
         filter_until=request.args.get("until", ""),
         filter_bonding=bonding or "",
         filter_machine=machine or "",
+        active_filter=bool(since or until or bonding or machine),
     )
 
 
