@@ -1,5 +1,0 @@
-# Web monitor deps only — copy this to the VM, NOT requirements.txt
-# (no PyQt6 / opencv / matplotlib needed on the server).
-Flask>=3.0
-Pillow>=10.2
-PyYAML>=6.0
