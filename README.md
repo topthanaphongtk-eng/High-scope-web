@@ -97,7 +97,7 @@ app/                     # ── Desktop capture app (Python) ──
         omexml.py        # parse OME-XML from TIFF tag 270
         capture.py       # watchdog file watcher
         image_store.py   # atomic copy + sidecar writer
-        capture_db.py    # SQLite writer (captures + capture_files)
+        capture_db.py    # SQL Server writer (pyodbc, captures + capture_files)
     gui/
         main_window.py   # PyQt6 main window
     utils/
@@ -112,7 +112,7 @@ web/                     # ── Web monitor (Next.js / TypeScript) ──
         api/{lots,captures}/route.ts
     components/          # CaptureCard, FilterBar, HeroCounts, Pagination
     lib/
-        capture-db.ts    # node:sqlite reader (read-only)
+        capture-db.ts    # mssql reader (read-only pool)
         settings.ts      # yaml + ENV precedence
         format.ts        # date/path utilities
     package.json
@@ -121,8 +121,7 @@ web/                     # ── Web monitor (Next.js / TypeScript) ──
 config/
     settings.example.yaml
 db/
-    schema_sqlite.sql    # canonical schema
-    schema_mssql.sql     # SQL Server equivalent (future migration)
+    schema_mssql.sql     # canonical SQL Server schema (DBA-owned)
 tests/
 tools/                   # CSV export / backfill utilities
 ```
