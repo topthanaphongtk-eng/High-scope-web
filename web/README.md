@@ -1,15 +1,13 @@
 # High Scope Capture — Web Monitor (Next.js)
 
-Read-only web view of `captures.db` — same database the desktop PyQt app
-writes to. Operators write through the desktop app; this server only reads.
-
-Ported from Flask to Next.js so it can deploy on hosts without a Python
-runtime. Behaviour matches the Flask version 1:1.
+Read-only web view of the central SQL Server DB (`schema_mssql.sql`) the
+desktop PyQt app writes to. Operators write through the desktop app; this
+server only reads.
 
 ## Stack
 
 - Next.js 15 (App Router, TypeScript, React 19)
-- **Node 22.5+ required** — uses the built-in `node:sqlite` (no native compile, no `better-sqlite3`)
+- `mssql` (tedious driver) — connection-pooled SQL Server client
 - `sharp` for on-the-fly TIFF → JPEG conversion
 - `js-yaml` for `config/settings.yaml`
 - Tailwind v3 (proper toolchain — config in [tailwind.config.ts](./tailwind.config.ts))
@@ -23,32 +21,33 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-If you see `node:sqlite is an experimental feature and might change at any time`,
-your Node version still flag-gates it. Run with:
-
-```powershell
-$env:NODE_OPTIONS = "--experimental-sqlite"
-npm run dev
-```
-
-(Stable in Node 24+, experimental in Node 22.5–23.x.)
+The DB schema lives at [`db/schema_mssql.sql`](../db/schema_mssql.sql) — run
+it once on the SQL Server before starting the web app.
 
 ## Configuration
 
-Same env vars as the Flask app:
+Two things to point at: the SQL Server, and the TIFF share folder.
 
-```bash
-# Linux / WSL
-export CAPTURE_DB=/mnt/share/_db/captures.db
-export SHARE_ROOT="/mnt/share/Picture high"
+Drop a `web/.env.local` (gitignored) with:
 
-# Windows (PowerShell)
-$env:CAPTURE_DB = "\\fileserver\share\_db\captures.db"
-$env:SHARE_ROOT = "\\fileserver\share\Picture high"
+```ini
+# MSSQL connection
+MSSQL_SERVER=sql.example.local        # required
+MSSQL_DATABASE=HighScopeCapture       # required
+MSSQL_USER=highscope_reader
+MSSQL_PASSWORD=********
+MSSQL_PORT=1433
+MSSQL_ENCRYPT=true
+MSSQL_TRUST_SERVER_CERT=true          # set false if the server has a trusted cert
+
+# TIFF share root
+SHARE_ROOT=\\fileserver\share\Picture high
 ```
 
-Falls back to `config/settings.yaml` (`storage.db_path`, `storage.shared_root`)
-in the repo root, then to `logs/captures.db` and `.`.
+Falls back to `config/settings.yaml` (`mssql.*`, `storage.shared_root`) in
+the repo root if env vars aren't set.
+
+The user only needs `SELECT` on `dbo.captures` and `dbo.capture_files`.
 
 ## Production
 
@@ -110,8 +109,8 @@ web/
 │   └── api/{lots,captures}/route.ts
 ├── components/                  CaptureCard, FilterBar, HeroCounts
 ├── lib/
-│   ├── capture-db.ts            better-sqlite3 wrapper (read-only)
-│   ├── settings.ts              yaml + ENV precedence
+│   ├── capture-db.ts            mssql pool + read queries (async)
+│   ├── settings.ts              yaml + ENV precedence; MSSQL_CONFIG
 │   ├── format.ts                fmtDt, parseDate, parseUntil, toImageUrl
 │   ├── decorate.ts              attach image_rel to capture files
 │   └── types.ts
@@ -124,14 +123,7 @@ web/
 
 Each desktop station writes:
 1. **Fused TIFF** + sidecar JSON → `{shared_root}/YYYY/MM/{lot_id}/`
-2. **Capture rows** → SQLite at `storage.db_path`
+2. **Capture rows** → SQL Server (`dbo.captures` + `dbo.capture_files`)
 3. **Per-capture JSON** → `{shared_root}/YYYY/MM/{lot_id}/_records/{uuid}.json`
 
-For the web to see all stations, point every desktop's `db_path` AND the
-web's `CAPTURE_DB` at the same shared file.
-
-## Switching to SQL Server
-
-The web side uses only `recentCaptures`, `lotCaptures`, `allLots` from
-`lib/capture-db.ts`. Swap that module for an `mssql` (`tedious`) adapter
-that returns the same shapes — no other files need to change.
+All stations point at the same SQL Server; the web app sees the union.

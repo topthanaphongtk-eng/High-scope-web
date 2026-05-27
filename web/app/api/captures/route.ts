@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   const limitRaw = Number(url.searchParams.get("limit") || 500);
   const limit = Number.isFinite(limitRaw) ? limitRaw : 500;
 
-  const captures = recentCaptures({
+  const captures = await recentCaptures({
     since,
     until,
     bonding_number: bonding,

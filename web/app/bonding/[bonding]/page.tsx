@@ -27,11 +27,13 @@ export default async function BondingView({
   const bonding = decodeURIComponent(rawBonding);
   const machine = sp.machine || null;
 
-  const captures = recentCaptures({
-    bonding_number: bonding,
-    lot_location: machine,
-    limit: 200,
-  }).map(decorate);
+  const captures = (
+    await recentCaptures({
+      bonding_number: bonding,
+      lot_location: machine,
+      limit: 200,
+    })
+  ).map(decorate);
 
   return (
     <>

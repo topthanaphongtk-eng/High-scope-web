@@ -69,14 +69,3 @@ export function toImageUrl(fusedPath: string | null | undefined): string | null 
   }
 }
 
-/** Local-time ISO string with NO timezone suffix. Used for lexical
- * comparisons against `captures.confirmed_at`, which the desktop app
- * stores with a `+HH:MM` suffix; the extra suffix doesn't affect the
- * compare because date/hour digits diverge first. */
-export function toIsoLocal(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
-}

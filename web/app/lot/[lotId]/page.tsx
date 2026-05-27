@@ -37,7 +37,7 @@ export default async function LotDetail({
 }) {
   const { lotId: rawId } = await params;
   const lotId = decodeURIComponent(rawId);
-  const captures = lotCaptures(lotId).map(decorate);
+  const captures = (await lotCaptures(lotId)).map(decorate);
   if (captures.length === 0) notFound();
 
   const first = captures[0];

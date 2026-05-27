@@ -57,7 +57,7 @@ export default async function Dashboard({
     mode,
   };
 
-  const totalMatch = countCaptures(filter);
+  const totalMatch = await countCaptures(filter);
   const totalPages = Math.max(1, Math.ceil(totalMatch / PER_PAGE));
   const rawPage = Number(sp.page || 1);
   const page = Number.isFinite(rawPage)
@@ -65,13 +65,11 @@ export default async function Dashboard({
     : 1;
   const offset = (page - 1) * PER_PAGE;
 
-  const captures = recentCaptures({
-    ...filter,
-    limit: PER_PAGE,
-    offset,
-  }).map(decorate);
-
-  const counts = bucketCounts();
+  const [rawCaptures, counts] = await Promise.all([
+    recentCaptures({ ...filter, limit: PER_PAGE, offset }),
+    bucketCounts(),
+  ]);
+  const captures = rawCaptures.map(decorate);
   const active = !!(since || until || bonding || machine || mode);
 
   const firstShown = totalMatch === 0 ? 0 : offset + 1;
