@@ -25,10 +25,21 @@ class CaptureSettings(BaseModel):
 class StorageSettings(BaseModel):
     shared_root: Path = Path(r"\\b1-1-s1\local\WI\Picture high")
     compute_sha256: bool = True
-    # Path of the SQLite measurements DB. Default sits next to logs/ for a
-    # quick start; change to a share-folder UNC path so multiple stations +
-    # the web monitor read/write the same DB.
-    db_path: Path = Path("./logs/measurements.db")
+
+
+class MssqlSettings(BaseModel):
+    """Connection details for the central SQL Server. All stations + the web
+    monitor point at the same instance/database — that's what makes the
+    history shared."""
+
+    server: str = ""
+    database: str = "HighScopeCapture"
+    user: str = ""
+    password: str = ""
+    port: int = 1433
+    encrypt: bool = True
+    trust_server_certificate: bool = True
+    driver: str = "ODBC Driver 17 for SQL Server"
 
 
 class AppSettings(BaseModel):
@@ -40,6 +51,7 @@ class Settings(BaseModel):
     mes: MesSettings
     capture: CaptureSettings
     storage: StorageSettings
+    mssql: MssqlSettings = Field(default_factory=MssqlSettings)
     app: AppSettings
 
     @classmethod

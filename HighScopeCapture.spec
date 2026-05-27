@@ -19,7 +19,6 @@ ROOT = Path(SPECPATH)
 datas = [
     # Default settings — operator can edit via the in-app Settings dialog.
     (str(ROOT / "config" / "settings.example.yaml"), "config"),
-    # Trend dialog uses matplotlib — no asset needed (uses system fonts).
 ]
 # Include the live settings.yaml only if it exists (won't on a clean check-out).
 if (ROOT / "config" / "settings.yaml").exists():
@@ -34,7 +33,6 @@ hiddenimports = [
     "PyQt6.sip",
     "zeep.transports",
     "PIL.Image",
-    "matplotlib.backends.backend_qtagg",
 ]
 
 block_cipher = None
@@ -50,10 +48,10 @@ a = Analysis(
     runtime_hooks=[],
     # Strip heavy stdlib / matplotlib bits that aren't used to keep size sane.
     excludes=[
-        # Don't drop unittest — pyparsing (transitive dep of matplotlib)
-        # imports its `testing` submodule at module load.
         "tkinter", "test", "pydoc",
-        "matplotlib.tests", "matplotlib.testing",
+        # Matplotlib was used only by the deleted trend dialog — drop it
+        # entirely to shrink the build.
+        "matplotlib",
     ],
     cipher=block_cipher,
     noarchive=False,

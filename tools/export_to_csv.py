@@ -1,12 +1,12 @@
-"""Export the local SQLite DB to CSV for review / SQL Server import.
+"""Export the local SQLite captures DB to CSV for review / SQL Server import.
 
 Writes two files into ./db/exports/ :
-    lot_sessions.csv
-    measurements.csv
+    captures.csv
+    capture_files.csv
 
 Usage:
-    python tools/export_to_csv.py                          # default DB
-    python tools/export_to_csv.py --db ./logs/measurements.db --out ./db/exports
+    python tools/export_to_csv.py                              # default DB
+    python tools/export_to_csv.py --db ./logs/captures.db --out ./db/exports
     python tools/export_to_csv.py --since 2026-01-01
 
 CSV format:
@@ -29,42 +29,36 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Column order intentionally matches schema_mssql.sql so an SSMS Import
 # Wizard / BULK INSERT lines up without manual re-mapping.
-LOT_SESSIONS_COLS = [
-    "session_id", "confirmed_at", "lot_id", "bonding_number",
+CAPTURES_COLS = [
+    "capture_id", "confirmed_at", "lot_id", "bonding_number",
     "lot_location", "mpc", "package", "qs",
     "operator_badge", "hostname", "app_version",
-    "n_locations", "n_pads", "raw_lot_info",
+    "mode", "raw_lot_info",
 ]
-MEASUREMENTS_COLS = [
-    "id", "session_id", "confirmed_at",
-    "lot_id", "bonding_number", "lot_location",
-    "mpc", "package", "qs", "operator_badge",
-    "location", "pad_index",
-    "pad_w_um", "pad_h_um", "ball_d_um",
-    "gap_min_um", "gap_mean_um",
-    "confidence", "pixel_size_um",
-    "source_ball_path", "source_pad_path",
-    "stored_ball_path", "stored_pad_path",
-    "extra_json",
+CAPTURE_FILES_COLS = [
+    "id", "capture_id", "slot",
+    "fused_path", "fused_name",
+    "size_bytes", "sha256",
 ]
 
 
 def export_table(
     con: sqlite3.Connection, table: str, columns: list[str],
     out_path: Path, since: str | None = None,
+    since_col: str | None = "confirmed_at",
 ) -> int:
     where = ""
     params: tuple = ()
-    if since is not None:
-        where = "WHERE confirmed_at >= ?"
+    if since is not None and since_col is not None:
+        where = f"WHERE {since_col} >= ?"
         params = (since,)
+    order = f"ORDER BY {since_col}" if since_col else ""
     cur = con.execute(
-        f"SELECT {', '.join(columns)} FROM {table} {where} ORDER BY confirmed_at",
+        f"SELECT {', '.join(columns)} FROM {table} {where} {order}",
         params,
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     n = 0
-    # utf-8-sig adds BOM so Excel/SSMS open Thai correctly.
     with out_path.open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
         w.writerow(columns)
@@ -78,7 +72,7 @@ def export_table(
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
-        "--db", default=str(ROOT / "logs" / "measurements.db"),
+        "--db", default=str(ROOT / "logs" / "captures.db"),
         help="path to source SQLite DB",
     )
     ap.add_argument(
@@ -105,14 +99,18 @@ def main() -> int:
 
     con = sqlite3.connect(str(src))
     try:
-        export_table(con, "lot_sessions", LOT_SESSIONS_COLS,
-                     out_dir / "lot_sessions.csv", args.since)
-        export_table(con, "measurements", MEASUREMENTS_COLS,
-                     out_dir / "measurements.csv", args.since)
+        export_table(
+            con, "captures", CAPTURES_COLS,
+            out_dir / "captures.csv", args.since,
+        )
+        # capture_files has no confirmed_at — order by id only.
+        export_table(
+            con, "capture_files", CAPTURE_FILES_COLS,
+            out_dir / "capture_files.csv", since=None, since_col="id",
+        )
     finally:
         con.close()
 
-    # Drop a tiny readme alongside so the team knows what they're looking at.
     (out_dir / "README.txt").write_text(
         f"CSV export from {src.name}\n"
         f"Generated: {datetime.now().isoformat()}\n"

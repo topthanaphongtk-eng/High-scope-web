@@ -4,19 +4,18 @@ import hashlib
 import json
 import logging
 import os
-import shutil
 import socket
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import cv2
+import numpy as np
+
 from app import __version__ as APP_VERSION
-from app.models.capture import CaptureRecord
-from app.services.omexml import parse_tiff
+from app.models.capture import CaptureRecord, OmeAcquisition
 
 log = logging.getLogger(__name__)
-
-_BKK_UTC_OFFSET_HOURS = 7
 
 
 def _local_time(utc: datetime | None) -> datetime:
@@ -36,29 +35,43 @@ def _sha256_of(path: Path, chunk: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
-def _format_name(
+def _safe(s: str) -> str:
+    return "".join(c for c in s if c.isalnum() or c in "-_")
+
+
+def _format_fused_name(
     lot_id: str,
+    badge: str,
+    lot_location: str | None,
+    slot: str,
     acquired: datetime,
-    location: str,
-    index_in_location: int,
     host: str,
 ) -> str:
+    """Filename scheme: {LOT}_{Badge}_{LotLoc}_{Slot}_{TS}_{Host}.tif
+
+    Slot is sanitised (e.g. "1st Ball" -> "1stBall") so the filename is
+    safe on Windows shares.
+    """
     ts = acquired.strftime("%Y%m%d_%H%M%S")
-    safe_lot = "".join(c for c in lot_id if c.isalnum() or c in "-_")
-    safe_loc = "".join(c for c in location if c.isalnum())
-    safe_host = "".join(c for c in host if c.isalnum() or c in "-_")
-    return f"{safe_lot}_{ts}_{safe_loc}_{index_in_location}_{safe_host}.tif"
+    parts = [_safe(lot_id), _safe(badge), _safe(lot_location or "machine")]
+    if slot:
+        parts.append(_safe(slot))
+    parts.append(ts)
+    parts.append(_safe(host))
+    return "_".join(p for p in parts if p) + ".tif"
 
 
-def _atomic_copy(src: Path, dst: Path) -> None:
-    """Copy src to dst via a .tmp file in the same folder, then rename.
-
+def _write_tiff_atomic(bgr: np.ndarray, dst: Path) -> None:
+    """Write a BGR ndarray as TIFF via a temp file in the same folder, then rename.
     Rename is atomic on NTFS, so readers on a shared folder never see a half-written file.
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_suffix(dst.suffix + ".tmp")
     try:
-        shutil.copyfile(src, tmp)
+        ok, encoded = cv2.imencode(".tif", bgr)
+        if not ok:
+            raise RuntimeError(f"cv2.imencode failed for {dst}")
+        tmp.write_bytes(encoded.tobytes())
         os.replace(tmp, dst)
     except Exception:
         if tmp.exists():
@@ -70,7 +83,7 @@ def _atomic_copy(src: Path, dst: Path) -> None:
 
 
 class ImageStore:
-    """Copies an incoming TIFF into the shared QC folder with a sidecar JSON."""
+    """Saves a fused image into the shared QC folder with a sidecar JSON."""
 
     def __init__(
         self,
@@ -83,23 +96,28 @@ class ImageStore:
         self.hostname = hostname or socket.gethostname()
         self.compute_sha256 = compute_sha256
 
-    def save(
+    def save_fused(
         self,
+        fused_bgr: np.ndarray,
         *,
-        source: Path,
         lot_id: str,
+        badge: str,
         lot_info: dict[str, Any],
-        operator_badge: str,
-        location: str,
-        index_in_location: int,
-        measurement: dict[str, Any] | None = None,
+        slot: str,
+        acquired_at: datetime | None = None,
+        ome: OmeAcquisition | None = None,
     ) -> CaptureRecord:
-        source = Path(source)
-        ome = parse_tiff(source)
-        acquired_local = _local_time(ome.acquisition_date_utc)
+        acquired_local = _local_time(acquired_at) if acquired_at is not None else datetime.now().astimezone()
+        ome = ome or OmeAcquisition()
 
-        stored_name = _format_name(
-            lot_id, acquired_local, location, index_in_location, self.hostname,
+        lot_location = (
+            lot_info.get("lot_location")
+            or lot_info.get("LotLocation")
+            or lot_info.get("location")
+        )
+
+        stored_name = _format_fused_name(
+            lot_id, badge, lot_location, slot, acquired_local, self.hostname,
         )
         dest_dir = (
             self.shared_root
@@ -109,7 +127,7 @@ class ImageStore:
         )
         dest_path = dest_dir / stored_name
 
-        _atomic_copy(source, dest_path)
+        _write_tiff_atomic(fused_bgr, dest_path)
 
         size_bytes = dest_path.stat().st_size
         sha = _sha256_of(dest_path) if self.compute_sha256 else None
@@ -117,19 +135,16 @@ class ImageStore:
         record = CaptureRecord(
             lot_id=lot_id,
             lot_info=lot_info,
-            operator_badge=operator_badge,
-            location=location,
-            index_in_location=index_in_location,
+            operator_badge=badge,
+            slot=slot,
             acquired_at_local=acquired_local,
             ome=ome,
-            source_path=source,
             stored_path=dest_path,
             stored_name=stored_name,
             size_bytes=size_bytes,
             sha256=sha,
             hostname=self.hostname,
             app_version=APP_VERSION,
-            measurement=measurement,
         )
 
         sidecar = dest_path.with_suffix(".json")
@@ -140,5 +155,5 @@ class ImageStore:
         )
         os.replace(sidecar_tmp, sidecar)
 
-        log.info("Saved %s (%.1f MB) → %s", source.name, size_bytes / 1e6, dest_path)
+        log.info("Saved fused %s (%.1f MB) → %s", stored_name, size_bytes / 1e6, dest_path)
         return record

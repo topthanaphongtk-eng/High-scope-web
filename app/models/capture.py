@@ -2,20 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, Field
-
-LocationCode = Literal["TL", "TR", "BL", "BR"]
-
-LOCATION_LABELS: dict[str, str] = {
-    "TL": "Top-left",
-    "TR": "Top-right",
-    "BL": "Bottom-left",
-    "BR": "Bottom-right",
-}
-LOCATION_ORDER: tuple[str, ...] = ("TL", "TR", "BL", "BR")
-SHOTS_PER_LOCATION = 3
+from pydantic import BaseModel
 
 
 class OmeAcquisition(BaseModel):
@@ -41,18 +30,16 @@ class OmeAcquisition(BaseModel):
 
 
 class CaptureRecord(BaseModel):
-    """Everything we know about a single captured image at save time."""
+    """Everything we know about a single fused image at save time."""
 
     lot_id: str
     lot_info: dict[str, Any]
     operator_badge: str
-    location: str                 # TL / TR / BL / BR
-    index_in_location: int        # 1..SHOTS_PER_LOCATION
+    slot: str                     # "1st Ball" or "2nd Ball" (both modes use this set)
 
     acquired_at_local: datetime
     ome: OmeAcquisition
 
-    source_path: Path
     stored_path: Path
     stored_name: str
 
@@ -61,8 +48,6 @@ class CaptureRecord(BaseModel):
 
     hostname: str
     app_version: str
-
-    measurement: dict[str, Any] | None = None  # ball detection result, if this is a ball pair
 
     def to_sidecar(self) -> dict[str, Any]:
         return {
@@ -74,9 +59,7 @@ class CaptureRecord(BaseModel):
                 "data_from_server": self.lot_info,
             },
             "capture": {
-                "location": self.location,
-                "location_label": LOCATION_LABELS.get(self.location, self.location),
-                "index_in_location": self.index_in_location,
+                "slot": self.slot,
                 "acquired_at": self.acquired_at_local.isoformat(),
                 "microscope": self.ome.microscope_model,
                 "detector_manufacturer": self.ome.detector_manufacturer,
@@ -96,12 +79,10 @@ class CaptureRecord(BaseModel):
                 "image_height": self.ome.image_height,
             },
             "file": {
-                "original_name": self.source_path.name,
                 "stored_name": self.stored_name,
                 "size_bytes": self.size_bytes,
                 "sha256": self.sha256,
             },
             "source_host": self.hostname,
             "app_version": self.app_version,
-            **({"measurement": self.measurement} if self.measurement else {}),
         }
