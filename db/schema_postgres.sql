@@ -58,3 +58,59 @@ CREATE TABLE IF NOT EXISTS capture_files (
 
 CREATE INDEX IF NOT EXISTS ix_capture_files_capture
     ON capture_files (capture_id);
+
+-- =====================================================================
+-- QC MODE  (WEB-written — the desktop never touches these two tables.
+-- The web only references captures(capture_id) via a read-only FK.)
+-- Requires PostgreSQL 12+ for the GENERATED ... STORED column.
+-- =====================================================================
+
+-- qc_operators: badge-only login directory (no password by design).
+-- Soft-disable via `active` — never hard-delete (reviews FK these rows).
+CREATE TABLE IF NOT EXISTS qc_operators (
+    badge_number  VARCHAR(32)  PRIMARY KEY,   -- same domain as captures.operator_badge
+    full_name     VARCHAR(255) NOT NULL,
+    active        BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMP(3) NOT NULL        -- set by app (Node local time)
+);
+
+-- qc_reviews: one CURRENT verdict per capture (re-grade = UPSERT on capture_id).
+-- 3 items each PASS|REJECT + optional note. overall_verdict is GENERATED so the
+-- rollup rule lives in the DB and cannot drift. package / confirmed_at are NOT
+-- copied here — the summary JOINs captures (immutable once confirmed).
+CREATE TABLE IF NOT EXISTS qc_reviews (
+    id               BIGINT       GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    capture_id       UUID         NOT NULL REFERENCES captures(capture_id),
+    badge_number     VARCHAR(32)  NOT NULL REFERENCES qc_operators(badge_number),
+    reviewed_at      TIMESTAMP(3) NOT NULL,        -- set by app (Node local time)
+
+    ball_size        VARCHAR(8)   NOT NULL CHECK (ball_size   IN ('PASS','REJECT')),
+    ball_size_note   VARCHAR(512),
+    pad_bond         VARCHAR(8)   NOT NULL CHECK (pad_bond    IN ('PASS','REJECT')),
+    pad_bond_note    VARCHAR(512),
+    weld_damage      VARCHAR(8)   NOT NULL CHECK (weld_damage IN ('PASS','REJECT')),
+    weld_damage_note VARCHAR(512),
+
+    overall_verdict  VARCHAR(8)
+        GENERATED ALWAYS AS (
+            CASE WHEN ball_size = 'REJECT' OR pad_bond = 'REJECT' OR weld_damage = 'REJECT'
+                 THEN 'REJECT' ELSE 'PASS' END
+        ) STORED,
+
+    CONSTRAINT uq_qc_reviews_capture UNIQUE (capture_id)   -- also indexes capture_id
+);
+
+-- Operator audit trail / "my recent reviews".
+CREATE INDEX IF NOT EXISTS ix_qc_reviews_badge
+    ON qc_reviews (badge_number, reviewed_at DESC);
+
+-- qc_acknowledgements: audit log of operators accepting the Visual Aid QC
+-- criteria. One row per acceptance (operators re-accept every login).
+CREATE TABLE IF NOT EXISTS qc_acknowledgements (
+    id            BIGINT       GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    badge_number  VARCHAR(32)  NOT NULL REFERENCES qc_operators(badge_number),
+    accepted_at   TIMESTAMP(3) NOT NULL        -- set by app (Node local time)
+);
+
+CREATE INDEX IF NOT EXISTS ix_qc_ack_badge
+    ON qc_acknowledgements (badge_number, accepted_at DESC);

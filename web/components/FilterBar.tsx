@@ -48,7 +48,7 @@ export default function FilterBar({
     <form
       ref={formRef}
       method="get"
-      className="mb-6 p-4 md:p-5 bg-ios-surface rounded-ios-lg shadow-ios flex flex-wrap gap-4 items-end"
+      className="mb-6 p-4 md:p-5 glass rounded-ios-lg shadow-ios flex flex-wrap gap-4 items-end"
     >
       <div>
         <label className={labelCls}>Since</label>

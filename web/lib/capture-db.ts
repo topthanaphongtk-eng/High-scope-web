@@ -39,7 +39,7 @@ let pool: Pool | null = null;
 /** Lazy, shared connection pool. pg's Pool manages many connections
  * internally — opening one per request is the wrong shape here. getPgConfig()
  * is called here (not at import) so DB config is only required at query time. */
-function getPool(): Pool {
+export function getPool(): Pool {
   if (!pool) pool = new Pool(getPgConfig());
   return pool;
 }
@@ -245,4 +245,54 @@ export async function allLots(limit = 200): Promise<LotSummary[]> {
     last_confirmed_at: isoOrNull(r.last_confirmed_at),
     capture_count: r.capture_count,
   }));
+}
+
+/** One capture (with its files) by id, or null. Used by the QC review screen. */
+export async function captureById(captureId: string): Promise<Capture | null> {
+  const result = await getPool().query<JoinedRow>(
+    `SELECT c.*, f.slot, f.fused_path, f.fused_name,
+            f.size_bytes AS file_size_bytes, f.sha256 AS file_sha256
+     FROM captures c
+     LEFT JOIN capture_files f ON f.capture_id = c.capture_id
+     WHERE c.capture_id = $1
+     ORDER BY f.id`,
+    [captureId],
+  );
+  if (result.rows.length === 0) return null;
+  const r0 = result.rows[0];
+  const cap: Capture = {
+    capture_id: r0.capture_id,
+    confirmed_at: isoOrNull(r0.confirmed_at),
+    lot_id: r0.lot_id,
+    bonding_number: r0.bonding_number,
+    lot_location: r0.lot_location,
+    mpc: r0.mpc,
+    package: r0.package,
+    qs: r0.qs,
+    operator_badge: r0.operator_badge,
+    hostname: r0.hostname,
+    app_version: r0.app_version,
+    mode: r0.mode,
+    raw_lot_info: r0.raw_lot_info,
+    files: [],
+  };
+  for (const r of result.rows) {
+    if (r.slot != null && r.fused_path != null && r.fused_name != null) {
+      cap.files.push({
+        slot: r.slot,
+        fused_path: r.fused_path,
+        fused_name: r.fused_name,
+        size_bytes: r.file_size_bytes,
+        sha256: r.file_sha256,
+      });
+    }
+  }
+  if (typeof cap.raw_lot_info === "string") {
+    try {
+      cap.raw_lot_info = JSON.parse(cap.raw_lot_info);
+    } catch {
+      // leave as string
+    }
+  }
+  return cap;
 }

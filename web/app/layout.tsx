@@ -71,6 +71,12 @@ export default function RootLayout({
               >
                 Dashboard
               </a>
+              <a
+                href="/qc"
+                className="px-3 py-1 text-[13px] font-medium text-ios-label2 rounded-full hover:bg-brand-50 hover:text-brand-600 transition-colors"
+              >
+                QC Mode
+              </a>
             </nav>
             <span className="ml-auto text-ios-caption2 text-ios-label3 hidden sm:flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />

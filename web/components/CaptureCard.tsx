@@ -1,5 +1,11 @@
-import type { Capture } from "@/lib/types";
+import type { Capture, QcStatus } from "@/lib/types";
 import { fmtDt } from "@/lib/format";
+
+const QC_CHIP: Record<QcStatus, { cls: string; label: string }> = {
+  AWAITING: { cls: "bg-accent-400/25 text-amber-800", label: "Awaiting QC" },
+  PASS: { cls: "bg-emerald-500/15 text-emerald-700", label: "QC Pass" },
+  REJECT: { cls: "bg-red-500/15 text-red-700", label: "QC Reject" },
+};
 
 const MODE_BADGE: Record<string, { cls: string; label: string }> = {
   mode2: {
@@ -28,16 +34,24 @@ function getWire(c: Capture): string | null {
 interface Props {
   c: Capture;
   variant?: "dashboard" | "bonding";
+  qcStatus?: QcStatus;
+  qcBadge?: string | null;
 }
 
-export default function CaptureCard({ c, variant = "dashboard" }: Props) {
+export default function CaptureCard({
+  c,
+  variant = "dashboard",
+  qcStatus,
+  qcBadge,
+}: Props) {
   const wire = getWire(c);
   const badge = modeBadge(c.mode);
+  const qc = qcStatus ? QC_CHIP[qcStatus] : null;
 
   return (
     <a
       href={`/lot/${encodeURIComponent(c.lot_id)}`}
-      className="group block bg-ios-surface rounded-ios-lg shadow-ios hover:shadow-ios-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
+      className="group block glass-card rounded-ios-lg shadow-ios hover:shadow-ios-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
     >
       {/* Top metadata strip */}
       <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
@@ -61,11 +75,23 @@ export default function CaptureCard({ c, variant = "dashboard" }: Props) {
             </span>
           </div>
         </div>
-        <span
-          className={`shrink-0 text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}
-        >
-          {badge.label}
-        </span>
+        <div className="shrink-0 flex flex-col items-end gap-1">
+          {qc && (
+            <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${qc.cls}`}>
+              {qc.label}
+            </span>
+          )}
+          {qcBadge && (
+            <span className="text-[9.5px] font-mono text-ios-label3">
+              QC by {qcBadge}
+            </span>
+          )}
+          <span
+            className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}
+          >
+            {badge.label}
+          </span>
+        </div>
       </div>
 
       {/* Time + machine row */}
