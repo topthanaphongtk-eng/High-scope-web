@@ -1,5 +1,9 @@
 # Database — schema reference
 
+> 🟢 **เพิ่งติดตั้งครั้งแรก / ไม่ถนัด software?** อ่าน [**คู่มือติดตั้งฉบับเริ่มจากศูนย์ (ภาษาไทย)**](SETUP-GUIDE-TH.md) — ทำตามทีละขั้นด้วย pgAdmin ได้เลย
+>
+> ไฟล์นี้เป็น **เอกสารอ้างอิงเชิงเทคนิค** (โครงสร้างตาราง + คำสั่ง command line)
+
 The desktop stations and the Next.js web monitor share one **central PostgreSQL**
 database. The schema lives in [`schema_postgres.sql`](schema_postgres.sql) —
 neither the desktop app nor the web app creates tables at runtime; they only
