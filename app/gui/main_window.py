@@ -40,7 +40,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app import __version__ as APP_VERSION
-from app.config import MssqlSettings, Settings
+from app.config import PostgresSettings, Settings
 from app.models.lot import LotDetail
 from app.services.capture import FileWatcher
 from app.services.capture_db import CaptureDB
@@ -962,7 +962,7 @@ class _SettingsDialog(QDialog):
     """Edit the operator-facing settings:
         • Read folder (where Olympus auto-saves new TIFFs)
         • Share folder (where fused captures are stored)
-        • SQL Server connection (server / database / user / password)
+        • PostgreSQL connection (host / database / user / password)
     Persists back to settings.yaml on Save. The caller is responsible for
     re-arming watchers / swapping ImageStore + DB using the returned values."""
 
@@ -970,13 +970,13 @@ class _SettingsDialog(QDialog):
         self,
         watch_root: Path,
         shared_root: Path,
-        mssql: MssqlSettings,
+        postgres: PostgresSettings,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._watch_root = Path(watch_root)
         self._shared_root = Path(shared_root)
-        self._mssql = mssql.model_copy()
+        self._pg = postgres.model_copy()
 
         self.setWindowTitle("Settings — folder locations")
         self.setModal(True)
@@ -1056,8 +1056,8 @@ class _SettingsDialog(QDialog):
         v.addLayout(share_row)
 
         db_lbl = QLabel(
-            "SQL Server  (every station + web monitor points at the same "
-            "instance — that's how history is shared)"
+            "PostgreSQL  (every station + web monitor points at the same "
+            "database — that's how history is shared)"
         )
         db_lbl.setStyleSheet(
             "QLabel { color: #334155; font-size: 11px; font-weight: 600; }"
@@ -1065,36 +1065,36 @@ class _SettingsDialog(QDialog):
         db_lbl.setWordWrap(True)
         v.addWidget(db_lbl)
 
-        self._mssql_server_input = QLineEdit(self._mssql.server)
-        self._mssql_server_input.setPlaceholderText("server host or IP (e.g. mth-sql.local)")
-        self._mssql_server_input.setMinimumHeight(34)
-        v.addWidget(self._mssql_server_input)
+        self._pg_host_input = QLineEdit(self._pg.host)
+        self._pg_host_input.setPlaceholderText("Postgres host (e.g. MTH-dk-b12416)")
+        self._pg_host_input.setMinimumHeight(34)
+        v.addWidget(self._pg_host_input)
 
-        mssql_db_row = QHBoxLayout()
-        mssql_db_row.setSpacing(8)
-        self._mssql_db_input = QLineEdit(self._mssql.database)
-        self._mssql_db_input.setPlaceholderText("database name")
-        self._mssql_db_input.setMinimumHeight(34)
-        self._mssql_port_input = QLineEdit(str(self._mssql.port))
-        self._mssql_port_input.setPlaceholderText("port")
-        self._mssql_port_input.setMinimumHeight(34)
-        self._mssql_port_input.setFixedWidth(90)
-        mssql_db_row.addWidget(self._mssql_db_input, 1)
-        mssql_db_row.addWidget(self._mssql_port_input)
-        v.addLayout(mssql_db_row)
+        pg_db_row = QHBoxLayout()
+        pg_db_row.setSpacing(8)
+        self._pg_db_input = QLineEdit(self._pg.database)
+        self._pg_db_input.setPlaceholderText("database name")
+        self._pg_db_input.setMinimumHeight(34)
+        self._pg_port_input = QLineEdit(str(self._pg.port))
+        self._pg_port_input.setPlaceholderText("port")
+        self._pg_port_input.setMinimumHeight(34)
+        self._pg_port_input.setFixedWidth(90)
+        pg_db_row.addWidget(self._pg_db_input, 1)
+        pg_db_row.addWidget(self._pg_port_input)
+        v.addLayout(pg_db_row)
 
-        mssql_auth_row = QHBoxLayout()
-        mssql_auth_row.setSpacing(8)
-        self._mssql_user_input = QLineEdit(self._mssql.user)
-        self._mssql_user_input.setPlaceholderText("user (blank = Windows auth)")
-        self._mssql_user_input.setMinimumHeight(34)
-        self._mssql_pwd_input = QLineEdit(self._mssql.password)
-        self._mssql_pwd_input.setPlaceholderText("password")
-        self._mssql_pwd_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._mssql_pwd_input.setMinimumHeight(34)
-        mssql_auth_row.addWidget(self._mssql_user_input, 1)
-        mssql_auth_row.addWidget(self._mssql_pwd_input, 1)
-        v.addLayout(mssql_auth_row)
+        pg_auth_row = QHBoxLayout()
+        pg_auth_row.setSpacing(8)
+        self._pg_user_input = QLineEdit(self._pg.user)
+        self._pg_user_input.setPlaceholderText("user")
+        self._pg_user_input.setMinimumHeight(34)
+        self._pg_pwd_input = QLineEdit(self._pg.password)
+        self._pg_pwd_input.setPlaceholderText("password")
+        self._pg_pwd_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._pg_pwd_input.setMinimumHeight(34)
+        pg_auth_row.addWidget(self._pg_user_input, 1)
+        pg_auth_row.addWidget(self._pg_pwd_input, 1)
+        v.addLayout(pg_auth_row)
 
         self._hint = QLabel("")
         self._hint.setStyleSheet(
@@ -1145,13 +1145,13 @@ class _SettingsDialog(QDialog):
     def _on_save(self) -> None:
         watch_text = self._watch_input.text().strip()
         share_text = self._share_input.text().strip()
-        server_text = self._mssql_server_input.text().strip()
-        db_text = self._mssql_db_input.text().strip()
-        if not watch_text or not share_text or not server_text or not db_text:
-            self._hint.setText("Read folder, share folder, server, and database are required.")
+        host_text = self._pg_host_input.text().strip()
+        db_text = self._pg_db_input.text().strip()
+        if not watch_text or not share_text or not host_text or not db_text:
+            self._hint.setText("Read folder, share folder, host, and database are required.")
             return
         try:
-            port = int(self._mssql_port_input.text().strip() or "1433")
+            port = int(self._pg_port_input.text().strip() or "5432")
         except ValueError:
             self._hint.setText("Port must be a number.")
             return
@@ -1161,11 +1161,11 @@ class _SettingsDialog(QDialog):
         except Exception as e:
             self._hint.setText(f"Invalid path: {e}")
             return
-        self._mssql = self._mssql.model_copy(update={
-            "server": server_text,
+        self._pg = self._pg.model_copy(update={
+            "host": host_text,
             "database": db_text,
-            "user": self._mssql_user_input.text().strip(),
-            "password": self._mssql_pwd_input.text(),
+            "user": self._pg_user_input.text().strip(),
+            "password": self._pg_pwd_input.text(),
             "port": port,
         })
         self.accept()
@@ -1176,8 +1176,8 @@ class _SettingsDialog(QDialog):
     def shared_root(self) -> Path:
         return self._shared_root
 
-    def mssql(self) -> MssqlSettings:
-        return self._mssql
+    def postgres(self) -> PostgresSettings:
+        return self._pg
 
 
 # ------------------------------------------------------------------ Slot panel
@@ -1554,7 +1554,7 @@ class MainWindow(QMainWindow):
             shared_root=settings.storage.shared_root,
             compute_sha256=settings.storage.compute_sha256,
         )
-        self._db = CaptureDB(settings.mssql)
+        self._db = CaptureDB(settings.postgres)
         self._watcher: FileWatcher | None = None
 
         self._current_lot: LotDetail | None = None
@@ -2042,18 +2042,18 @@ class MainWindow(QMainWindow):
         dlg = _SettingsDialog(
             watch_root=self._settings.capture.watch_root,
             shared_root=self._settings.storage.shared_root,
-            mssql=self._settings.mssql,
+            postgres=self._settings.postgres,
             parent=self,
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         new_watch = dlg.watch_root()
         new_share = dlg.shared_root()
-        new_mssql = dlg.mssql()
+        new_pg = dlg.postgres()
 
         self._settings.capture.watch_root = new_watch
         self._settings.storage.shared_root = new_share
-        self._settings.mssql = new_mssql
+        self._settings.postgres = new_pg
 
         if self._settings_path is not None:
             try:
@@ -2072,13 +2072,13 @@ class MainWindow(QMainWindow):
             compute_sha256=self._settings.storage.compute_sha256,
         )
         try:
-            self._db = CaptureDB(new_mssql)
+            self._db = CaptureDB(new_pg)
         except Exception as e:
-            log.exception("could not connect to SQL Server %s", new_mssql.server)
+            log.exception("could not connect to PostgreSQL %s", new_pg.host)
             QMessageBox.warning(
                 self, "Database not reachable",
-                f"Couldn't connect to SQL Server:\n"
-                f"{new_mssql.server}/{new_mssql.database}\n\n{e}\n\n"
+                f"Couldn't connect to PostgreSQL:\n"
+                f"{new_pg.host}/{new_pg.database}\n\n{e}\n\n"
                 "Old connection will keep being used until the settings are fixed.",
             )
 
@@ -2088,7 +2088,8 @@ class MainWindow(QMainWindow):
             self._watcher = None
             self._arm_watcher()
         self.statusBar().showMessage(
-            f"Settings saved — read: {new_watch} · share: {new_share} · db: {new_db}",
+            f"Settings saved — read: {new_watch} · share: {new_share} · "
+            f"db: {new_pg.host}/{new_pg.database}",
             5000,
         )
 

@@ -1,4 +1,7 @@
-"""Export the local SQLite captures DB to CSV for review / SQL Server import.
+"""Export a local SQLite captures DB to CSV for review / PostgreSQL import.
+
+Legacy helper for stations that ran the old SQLite-backed build. The CSVs
+can be loaded into the central PostgreSQL with `\\copy` (see db/README.md).
 
 Writes two files into ./db/exports/ :
     captures.csv
@@ -10,8 +13,8 @@ Usage:
     python tools/export_to_csv.py --since 2026-01-01
 
 CSV format:
-    UTF-8 with BOM (so Excel + SSMS Import Wizard read Thai/µ correctly)
-    Headers in row 1; same column order as schema_mssql.sql expects
+    UTF-8 with BOM (so Excel reads Thai/µ correctly)
+    Headers in row 1; same column order as schema_postgres.sql expects
     NULLs encoded as empty string
     Datetimes in ISO 8601
 """
@@ -27,8 +30,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Column order intentionally matches schema_mssql.sql so an SSMS Import
-# Wizard / BULK INSERT lines up without manual re-mapping.
+# Column order intentionally matches schema_postgres.sql so a `\copy`
+# import lines up without manual re-mapping.
 CAPTURES_COLS = [
     "capture_id", "confirmed_at", "lot_id", "bonding_number",
     "lot_location", "mpc", "package", "qs",
@@ -114,7 +117,7 @@ def main() -> int:
     (out_dir / "README.txt").write_text(
         f"CSV export from {src.name}\n"
         f"Generated: {datetime.now().isoformat()}\n"
-        f"Schema:    db/schema_mssql.sql (column order matches)\n"
+        f"Schema:    db/schema_postgres.sql (column order matches)\n"
         f"Encoding:  UTF-8 with BOM\n"
         f"Nulls:     empty cell\n",
         encoding="utf-8",

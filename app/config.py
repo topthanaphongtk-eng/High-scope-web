@@ -27,19 +27,17 @@ class StorageSettings(BaseModel):
     compute_sha256: bool = True
 
 
-class MssqlSettings(BaseModel):
-    """Connection details for the central SQL Server. All stations + the web
-    monitor point at the same instance/database — that's what makes the
-    history shared."""
+class PostgresSettings(BaseModel):
+    """Connection details for the central PostgreSQL server. All stations +
+    the web monitor point at the same instance/database — that's what makes
+    the history shared."""
 
-    server: str = ""
-    database: str = "HighScopeCapture"
-    user: str = ""
+    host: str = ""
+    port: int = 5432
+    database: str = "highscope"
+    user: str = "highscope"
     password: str = ""
-    port: int = 1433
-    encrypt: bool = True
-    trust_server_certificate: bool = True
-    driver: str = "ODBC Driver 17 for SQL Server"
+    sslmode: str = "prefer"
 
 
 class AppSettings(BaseModel):
@@ -51,7 +49,7 @@ class Settings(BaseModel):
     mes: MesSettings
     capture: CaptureSettings
     storage: StorageSettings
-    mssql: MssqlSettings = Field(default_factory=MssqlSettings)
+    postgres: PostgresSettings = Field(default_factory=PostgresSettings)
     app: AppSettings
 
     @classmethod

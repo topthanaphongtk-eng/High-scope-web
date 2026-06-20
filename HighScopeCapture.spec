@@ -33,6 +33,7 @@ hiddenimports = [
     "PyQt6.sip",
     "zeep.transports",
     "PIL.Image",
+    "psycopg2",
 ]
 
 block_cipher = None

@@ -1,13 +1,13 @@
 # High Scope Capture — Web Monitor (Next.js)
 
-Read-only web view of the central SQL Server DB (`schema_mssql.sql`) the
+Read-only web view of the central PostgreSQL DB (`schema_postgres.sql`) the
 desktop PyQt app writes to. Operators write through the desktop app; this
 server only reads.
 
 ## Stack
 
 - Next.js 15 (App Router, TypeScript, React 19)
-- `mssql` (tedious driver) — connection-pooled SQL Server client
+- `pg` (node-postgres) — connection-pooled PostgreSQL client
 - `sharp` for on-the-fly TIFF → JPEG conversion
 - `js-yaml` for `config/settings.yaml`
 - Tailwind v3 (proper toolchain — config in [tailwind.config.ts](./tailwind.config.ts))
@@ -21,33 +21,32 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-The DB schema lives at [`db/schema_mssql.sql`](../db/schema_mssql.sql) — run
-it once on the SQL Server before starting the web app.
+The DB schema lives at [`db/schema_postgres.sql`](../db/schema_postgres.sql) — run
+it once on PostgreSQL before starting the web app.
 
 ## Configuration
 
-Two things to point at: the SQL Server, and the TIFF share folder.
+Two things to point at: PostgreSQL, and the TIFF share folder.
 
 Drop a `web/.env.local` (gitignored) with:
 
 ```ini
-# MSSQL connection
-MSSQL_SERVER=sql.example.local        # required
-MSSQL_DATABASE=HighScopeCapture       # required
-MSSQL_USER=highscope_reader
-MSSQL_PASSWORD=********
-MSSQL_PORT=1433
-MSSQL_ENCRYPT=true
-MSSQL_TRUST_SERVER_CERT=true          # set false if the server has a trusted cert
+# PostgreSQL connection
+PGHOST=MTH-dk-b12416        # required
+PGDATABASE=highscope        # required
+PGUSER=highscope
+PGPASSWORD=********
+PGPORT=5432
+PGSSLMODE=prefer            # disable | prefer | require | verify-ca | verify-full
 
 # TIFF share root
 SHARE_ROOT=\\fileserver\share\Picture high
 ```
 
-Falls back to `config/settings.yaml` (`mssql.*`, `storage.shared_root`) in
+Falls back to `config/settings.yaml` (`postgres.*`, `storage.shared_root`) in
 the repo root if env vars aren't set.
 
-The user only needs `SELECT` on `dbo.captures` and `dbo.capture_files`.
+The user only needs `SELECT` on `captures` and `capture_files`.
 
 ## Production
 
@@ -109,8 +108,8 @@ web/
 │   └── api/{lots,captures}/route.ts
 ├── components/                  CaptureCard, FilterBar, HeroCounts
 ├── lib/
-│   ├── capture-db.ts            mssql pool + read queries (async)
-│   ├── settings.ts              yaml + ENV precedence; MSSQL_CONFIG
+│   ├── capture-db.ts            pg pool + read queries (async)
+│   ├── settings.ts              yaml + ENV precedence; getPgConfig
 │   ├── format.ts                fmtDt, parseDate, parseUntil, toImageUrl
 │   ├── decorate.ts              attach image_rel to capture files
 │   └── types.ts
@@ -123,7 +122,7 @@ web/
 
 Each desktop station writes:
 1. **Fused TIFF** + sidecar JSON → `{shared_root}/YYYY/MM/{lot_id}/`
-2. **Capture rows** → SQL Server (`dbo.captures` + `dbo.capture_files`)
+2. **Capture rows** → PostgreSQL (`captures` + `capture_files`)
 3. **Per-capture JSON** → `{shared_root}/YYYY/MM/{lot_id}/_records/{uuid}.json`
 
-All stations point at the same SQL Server; the web app sees the union.
+All stations point at the same PostgreSQL; the web app sees the union.

@@ -17,6 +17,15 @@ storage:
   shared_root: "//SERVER/qc-images"
   compute_sha256: true
 
+postgres:
+  # Central PostgreSQL the stations + web monitor all share.
+  host: ""                 # e.g. MTH-dk-b12416
+  port: 5432
+  database: highscope
+  user: highscope
+  password: ""             # set per machine; keep out of version control
+  sslmode: prefer          # disable | prefer | require | verify-ca | verify-full
+
 app:
   log_dir: "./logs"
   log_level: "INFO"

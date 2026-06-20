@@ -1,10 +1,10 @@
-"""Central SQL Server store for confirmed image captures.
+"""Central PostgreSQL store for confirmed image captures.
 
 One row in `captures` per Confirm event, plus N rows in `capture_files` for
 the fused images saved on the share folder. Mode 1 has 1 file row, Mode 2
 has 3 (Ball / Pad / Weld).
 
-Schema is owned by the DBA — see `db/schema_mssql.sql`. This module only
+Schema is owned by the DBA — see `db/schema_postgres.sql`. This module only
 reads/writes; it does not create tables. All stations + the Next.js web
 monitor point at the same database, which is how history is shared.
 """
@@ -20,42 +20,38 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import pyodbc
+import psycopg2
+from psycopg2.extras import Json
 
-from app.config import MssqlSettings
+from app.config import PostgresSettings
 
 log = logging.getLogger(__name__)
 
 
-def _build_connection_string(cfg: MssqlSettings) -> str:
-    parts = [
-        f"DRIVER={{{cfg.driver}}}",
-        f"SERVER={cfg.server},{cfg.port}" if cfg.port else f"SERVER={cfg.server}",
-        f"DATABASE={cfg.database}",
-    ]
-    if cfg.user:
-        parts.append(f"UID={cfg.user}")
-        parts.append(f"PWD={cfg.password}")
-    else:
-        # No user → fall back to Windows auth (the operator's domain account).
-        parts.append("Trusted_Connection=yes")
-    parts.append("Encrypt=yes" if cfg.encrypt else "Encrypt=no")
-    parts.append(
-        "TrustServerCertificate=yes"
-        if cfg.trust_server_certificate
-        else "TrustServerCertificate=no"
-    )
-    return ";".join(parts) + ";"
+def _dumps(obj: Any) -> str:
+    """JSON encoder for raw_lot_info: keep Unicode, stringify odd types."""
+    return json.dumps(obj, default=str, ensure_ascii=False)
+
+
+def _connect_kwargs(cfg: PostgresSettings) -> dict[str, Any]:
+    return {
+        "host": cfg.host,
+        "port": cfg.port,
+        "dbname": cfg.database,
+        "user": cfg.user,
+        "password": cfg.password,
+        "sslmode": cfg.sslmode,
+    }
 
 
 class CaptureDB:
-    """Thin pyodbc wrapper. Connections are short-lived (one per call) so
+    """Thin psycopg2 wrapper. Connections are short-lived (one per call) so
     the pool isn't held between Confirm clicks — fits the operator cadence
-    and avoids issues if the SQL Server briefly goes away."""
+    and avoids issues if PostgreSQL briefly goes away."""
 
-    def __init__(self, cfg: MssqlSettings) -> None:
+    def __init__(self, cfg: PostgresSettings) -> None:
         self._cfg = cfg
-        self._conn_str = _build_connection_string(cfg)
+        self._connect_kwargs = _connect_kwargs(cfg)
         # Connection is *not* verified here so the GUI can still open
         # when settings.yaml is incomplete — operators can then fix it
         # via the Settings dialog. The first read/write surfaces any
@@ -63,7 +59,7 @@ class CaptureDB:
 
     @contextmanager
     def _conn(self):
-        con = pyodbc.connect(self._conn_str, autocommit=False)
+        con = psycopg2.connect(**self._connect_kwargs)
         try:
             yield con
             con.commit()
@@ -107,26 +103,25 @@ class CaptureDB:
             cur = con.cursor()
             cur.execute(
                 """
-                INSERT INTO dbo.captures (
+                INSERT INTO captures (
                     capture_id, confirmed_at, lot_id, bonding_number,
                     lot_location, mpc, package, qs,
                     operator_badge, hostname, app_version,
                     mode, raw_lot_info
-                ) VALUES (?,?,?,?, ?,?,?,?, ?,?,?, ?,?)
+                ) VALUES (%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s)
                 """,
                 (
                     capture_id, ts, lot_id, bonding_number, lot_location,
                     info.get("mpc"), info.get("package"), info.get("qs"),
                     operator_badge, hostname, app_version, mode,
-                    json.dumps(info, default=str, ensure_ascii=False),
+                    Json(info, dumps=_dumps),
                 ),
             )
-            cur.fast_executemany = True
             cur.executemany(
                 """
-                INSERT INTO dbo.capture_files (
+                INSERT INTO capture_files (
                     capture_id, slot, fused_path, fused_name, size_bytes, sha256
-                ) VALUES (?,?,?,?,?,?)
+                ) VALUES (%s,%s,%s,%s,%s,%s)
                 """,
                 [
                     (
@@ -162,22 +157,22 @@ class CaptureDB:
         clauses: list[str] = []
         params: list[Any] = []
         if since is not None:
-            clauses.append("c.confirmed_at >= ?")
+            clauses.append("c.confirmed_at >= %s")
             params.append(since)
         if until is not None:
-            clauses.append("c.confirmed_at <= ?")
+            clauses.append("c.confirmed_at <= %s")
             params.append(until)
         if bonding_number is not None:
-            clauses.append("c.bonding_number = ?")
+            clauses.append("c.bonding_number = %s")
             params.append(bonding_number)
         if lot_location is not None:
-            clauses.append("ISNULL(c.lot_location, N'') = ?")
+            clauses.append("COALESCE(c.lot_location, '') = %s")
             params.append(lot_location)
         if lot_id is not None:
-            clauses.append("c.lot_id = ?")
+            clauses.append("c.lot_id = %s")
             params.append(lot_id)
         if mode is not None:
-            clauses.append("c.mode = ?")
+            clauses.append("c.mode = %s")
             params.append(mode)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
 
@@ -185,21 +180,22 @@ class CaptureDB:
         # those rows — avoids the old "limit * 4" trick.
         sql = f"""
             WITH paged AS (
-                SELECT TOP (?) capture_id, confirmed_at
-                FROM dbo.captures c
+                SELECT capture_id, confirmed_at
+                FROM captures c
                 {where}
                 ORDER BY c.confirmed_at DESC, c.capture_id
+                LIMIT %s
             )
             SELECT c.*, f.slot, f.fused_path, f.fused_name,
                    f.size_bytes AS file_size_bytes, f.sha256 AS file_sha256
-            FROM dbo.captures c
+            FROM captures c
             INNER JOIN paged p ON p.capture_id = c.capture_id
-            LEFT JOIN dbo.capture_files f ON f.capture_id = c.capture_id
+            LEFT JOIN capture_files f ON f.capture_id = c.capture_id
             ORDER BY c.confirmed_at DESC, c.capture_id, f.id
         """
         with self._conn() as con:
             cur = con.cursor()
-            cur.execute(sql, (int(limit), *params))
+            cur.execute(sql, (*params, int(limit)))
             cols = [d[0] for d in cur.description]
             rows = [dict(zip(cols, r)) for r in cur.fetchall()]
 
@@ -229,9 +225,10 @@ class CaptureDB:
                     "sha256": r["file_sha256"],
                 })
         out = [grouped[cid] for cid in order]
-        # Decode raw_lot_info JSON for caller convenience
+        # raw_lot_info is JSONB → psycopg2 already returns a dict; decode only
+        # if some row came back as a plain string.
         for c in out:
-            if c.get("raw_lot_info"):
+            if isinstance(c.get("raw_lot_info"), str):
                 try:
                     c["raw_lot_info"] = json.loads(c["raw_lot_info"])
                 except (TypeError, ValueError):
@@ -246,13 +243,13 @@ class CaptureDB:
             cur = con.cursor()
             cur.execute(
                 """
-                SELECT TOP (?)
-                       lot_id,
+                SELECT lot_id,
                        MAX(confirmed_at) AS last_confirmed_at,
                        COUNT(*) AS capture_count
-                FROM dbo.captures
+                FROM captures
                 GROUP BY lot_id
                 ORDER BY last_confirmed_at DESC
+                LIMIT %s
                 """,
                 (int(limit),),
             )
@@ -269,7 +266,7 @@ class CaptureDB:
         with self._conn() as con:
             cur = con.cursor()
             cur.execute(
-                "SELECT * FROM dbo.captures WHERE capture_id = ?",
+                "SELECT * FROM captures WHERE capture_id = %s",
                 (capture_id,),
             )
             row = cur.fetchone()
@@ -280,13 +277,13 @@ class CaptureDB:
             cap["capture_id"] = str(cap["capture_id"])
             if isinstance(cap.get("confirmed_at"), datetime):
                 cap["confirmed_at"] = cap["confirmed_at"].isoformat()
-            if cap.get("raw_lot_info"):
+            if isinstance(cap.get("raw_lot_info"), str):
                 try:
                     cap["raw_lot_info"] = json.loads(cap["raw_lot_info"])
                 except (TypeError, ValueError):
                     pass
             cur.execute(
-                "SELECT * FROM dbo.capture_files WHERE capture_id = ? ORDER BY id",
+                "SELECT * FROM capture_files WHERE capture_id = %s ORDER BY id",
                 (capture_id,),
             )
             f_cols = [d[0] for d in cur.description]

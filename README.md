@@ -2,8 +2,8 @@
 
 Two-part QC system for wire-bond inspection:
 
-- **Desktop capture app** (Python / PyQt) — runs on each operator station. Pairs Olympus STM 7 microscope captures with LOT data from the plant MES and files each image into a shared QC folder with a JSON sidecar. Records every Confirm event into `captures.db`.
-- **Web monitor** (Next.js) — read-only image gallery served from any host with Node 22.5+. Reads the same `captures.db` so the team can browse captures by LOT / bonding / machine without touching the operator stations. See [web/README.md](web/README.md).
+- **Desktop capture app** (Python / PyQt) — runs on each operator station. Pairs Olympus STM 7 microscope captures with LOT data from the plant MES and files each image into a shared QC folder with a JSON sidecar. Records every Confirm event into the central **PostgreSQL** database.
+- **Web monitor** (Next.js) — read-only image gallery served from any host with Node 22.5+. Reads the same PostgreSQL database so the team can browse captures by LOT / bonding / machine without touching the operator stations. See [web/README.md](web/README.md).
 
 The Python desktop app is the only thing that **writes** to the DB. The web tier is purely read-only.
 
@@ -53,7 +53,7 @@ python main.py --config config\settings.yaml
 ## Web monitor (read-only gallery)
 
 The web view lives in [web/](web/) — a Next.js App Router app, no Python.
-It reads the same `captures.db` and serves TIFF previews from `SHARE_ROOT`
+It reads the same PostgreSQL database and serves TIFF previews from `SHARE_ROOT`
 (TIFF → JPEG conversion happens on the fly via `sharp`).
 
 Quick start on a server with **Node 22.5+**:
@@ -62,7 +62,10 @@ Quick start on a server with **Node 22.5+**:
 cd web
 npm install
 # Tell the server where to read the DB + share folder
-export CAPTURE_DB="//fileserver/share/_db/captures.db"
+export PGHOST="MTH-dk-b12416"
+export PGDATABASE="highscope"
+export PGUSER="highscope"
+export PGPASSWORD="********"
 export SHARE_ROOT="//fileserver/share/Picture high"
 npm run build
 npm run start                   # http://0.0.0.0:3000
@@ -97,7 +100,7 @@ app/                     # ── Desktop capture app (Python) ──
         omexml.py        # parse OME-XML from TIFF tag 270
         capture.py       # watchdog file watcher
         image_store.py   # atomic copy + sidecar writer
-        capture_db.py    # SQL Server writer (pyodbc, captures + capture_files)
+        capture_db.py    # PostgreSQL writer (psycopg2, captures + capture_files)
     gui/
         main_window.py   # PyQt6 main window
     utils/
@@ -112,7 +115,7 @@ web/                     # ── Web monitor (Next.js / TypeScript) ──
         api/{lots,captures}/route.ts
     components/          # CaptureCard, FilterBar, HeroCounts, Pagination
     lib/
-        capture-db.ts    # mssql reader (read-only pool)
+        capture-db.ts    # pg reader (read-only pool)
         settings.ts      # yaml + ENV precedence
         format.ts        # date/path utilities
     package.json
@@ -121,7 +124,7 @@ web/                     # ── Web monitor (Next.js / TypeScript) ──
 config/
     settings.example.yaml
 db/
-    schema_mssql.sql     # canonical SQL Server schema (DBA-owned)
+    schema_postgres.sql  # canonical PostgreSQL schema
 tests/
 tools/                   # CSV export / backfill utilities
 ```

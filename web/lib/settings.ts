@@ -1,20 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
-import type { config as MssqlConfig } from "mssql";
+import type { PoolConfig } from "pg";
 
 const ROOT = path.resolve(process.cwd(), "..");
 
 interface YamlSettings {
   storage?: { shared_root?: string };
-  mssql?: {
-    server?: string;
+  postgres?: {
+    host?: string;
+    port?: number;
     database?: string;
     user?: string;
     password?: string;
-    port?: number;
-    encrypt?: boolean;
-    trust_server_certificate?: boolean;
+    sslmode?: string;
   };
 }
 
@@ -36,38 +35,48 @@ export const SHARE_ROOT = path.resolve(
   process.env.SHARE_ROOT || yamlCfg.storage?.shared_root || ".",
 );
 
-function envBool(name: string, fallback: boolean): boolean {
-  const v = process.env[name];
-  if (v == null) return fallback;
-  return /^(1|true|yes|on)$/i.test(v);
-}
+let cachedPgConfig: PoolConfig | null = null;
 
-const server = process.env.MSSQL_SERVER || yamlCfg.mssql?.server;
-const database = process.env.MSSQL_DATABASE || yamlCfg.mssql?.database;
+/**
+ * Build (and validate) the PostgreSQL connection config on first use.
+ *
+ * Validation is deferred to call time — importing this module must never
+ * throw. `next build` imports every route module to collect page data, and
+ * DB-less routes (e.g. /image, which only needs SHARE_ROOT) must load even
+ * when DB config is absent. Mirrors the desktop app, whose CaptureDB also
+ * defers its connection check so the GUI can open with incomplete settings.
+ *
+ * Reads the standard libpq env vars (PGHOST, PGPORT, ...) first, then falls
+ * back to config/settings.yaml `postgres.*`.
+ */
+export function getPgConfig(): PoolConfig {
+  if (cachedPgConfig) return cachedPgConfig;
 
-if (!server || !database) {
-  throw new Error(
-    "MSSQL_SERVER and MSSQL_DATABASE must be set (env or config/settings.yaml mssql.*)",
-  );
-}
+  const host = process.env.PGHOST || yamlCfg.postgres?.host;
+  const database = process.env.PGDATABASE || yamlCfg.postgres?.database;
 
-export const MSSQL_CONFIG: MssqlConfig = {
-  server,
-  database,
-  user: process.env.MSSQL_USER || yamlCfg.mssql?.user,
-  password: process.env.MSSQL_PASSWORD || yamlCfg.mssql?.password,
-  port: Number(process.env.MSSQL_PORT) || yamlCfg.mssql?.port || 1433,
-  options: {
-    encrypt: envBool("MSSQL_ENCRYPT", yamlCfg.mssql?.encrypt ?? true),
-    trustServerCertificate: envBool(
-      "MSSQL_TRUST_SERVER_CERT",
-      yamlCfg.mssql?.trust_server_certificate ?? true,
-    ),
-    enableArithAbort: true,
-  },
-  pool: {
+  if (!host || !database) {
+    throw new Error(
+      "PGHOST and PGDATABASE must be set (env or config/settings.yaml postgres.*)",
+    );
+  }
+
+  const sslmode =
+    process.env.PGSSLMODE || yamlCfg.postgres?.sslmode || "prefer";
+  const ssl = /^(require|verify-ca|verify-full)$/.test(sslmode)
+    ? { rejectUnauthorized: sslmode === "verify-full" }
+    : false;
+
+  cachedPgConfig = {
+    host,
+    database,
+    user: process.env.PGUSER || yamlCfg.postgres?.user,
+    password: process.env.PGPASSWORD || yamlCfg.postgres?.password,
+    port: Number(process.env.PGPORT) || yamlCfg.postgres?.port || 5432,
+    ssl,
     max: 10,
-    min: 0,
     idleTimeoutMillis: 30_000,
-  },
-};
+  };
+
+  return cachedPgConfig;
+}
