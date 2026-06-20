@@ -605,115 +605,9 @@ class _StartupGate(QDialog):
 # ------------------------------------------------------------------ Mode picker
 
 
-class _ModeSelectDialog(QDialog):
-    """Pops up after sign-in. Operator picks Mode 1 (single fuse) or
-    Mode 2 (Ball + Pad + Weld fuses)."""
-
-    MODE_SINGLE = "mode1"
-    MODE_TRIPLE = "mode2"
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._mode: str | None = None
-
-        self.setWindowTitle("Choose mode")
-        self.setModal(True)
-        self.setWindowFlags(
-            Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-
-        wrapper = QWidget(self)
-        wrapper.setObjectName("backdrop")
-        wrapper.setStyleSheet("#backdrop { background: rgba(15, 23, 42, 0.55); }")
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(wrapper)
-
-        wrap_layout = QVBoxLayout(wrapper)
-        wrap_layout.setContentsMargins(0, 0, 0, 0)
-
-        card = QFrame()
-        card.setObjectName("card")
-        card.setStyleSheet(
-            "#card { background: #ffffff; border-radius: 14px;"
-            " border: 1px solid #e2e8f0; }"
-        )
-        card.setFixedWidth(620)
-
-        card_v = QVBoxLayout(card)
-        card_v.setContentsMargins(28, 26, 28, 24)
-        card_v.setSpacing(14)
-
-        title = QLabel("Choose capture mode")
-        title.setStyleSheet(
-            "QLabel { color: #0f172a; font-size: 22px; font-weight: 700; }"
-        )
-        subtitle = QLabel(
-            "How many fused images do you want to save for this LOT?"
-        )
-        subtitle.setStyleSheet("QLabel { color: #64748b; font-size: 12px; }")
-        subtitle.setWordWrap(True)
-        card_v.addWidget(title)
-        card_v.addWidget(subtitle)
-        card_v.addSpacing(4)
-
-        cards_row = QHBoxLayout()
-        cards_row.setSpacing(12)
-
-        def make_card(label: str, hint: str, mode: str) -> QPushButton:
-            btn = QPushButton(f"{label}\n\n{hint}")
-            btn.setMinimumHeight(160)
-            btn.setStyleSheet(
-                "QPushButton {"
-                " background: #f8fafc; color: #0f172a;"
-                " border: 2px solid #e2e8f0; border-radius: 12px;"
-                " padding: 18px 16px; text-align: left; font-size: 13px;"
-                " font-weight: 500;"
-                "}"
-                "QPushButton:hover {"
-                " background: #eef2ff; border-color: #818cf8; color: #4338ca;"
-                "}"
-                "QPushButton:pressed { background: #e0e7ff; }"
-            )
-            btn.clicked.connect(lambda: self._pick(mode))
-            return btn
-
-        single_btn = make_card(
-            "🎯  200X Monitoring",
-            "Drop 2 source images each for 1st Ball and 2nd Ball — the app "
-            "fuses each pair and saves 2 fused images with the LOT.",
-            self.MODE_SINGLE,
-        )
-        triple_btn = make_card(
-            "⚡  Engineering lot",
-            "Same workflow as 200X Monitoring (1st Ball + 2nd Ball) — tagged "
-            "as engineering so the lot can be filtered separately on the web.",
-            self.MODE_TRIPLE,
-        )
-        cards_row.addWidget(single_btn)
-        cards_row.addWidget(triple_btn)
-        card_v.addLayout(cards_row)
-
-        h_center = QHBoxLayout()
-        h_center.addStretch(1)
-        h_center.addWidget(card)
-        h_center.addStretch(1)
-        wrap_layout.addStretch(1)
-        wrap_layout.addLayout(h_center)
-        wrap_layout.addStretch(2)
-
-    def showEvent(self, e) -> None:  # type: ignore[override]
-        super().showEvent(e)
-        if self.parent() is not None:
-            self.setGeometry(self.parent().geometry())  # type: ignore[union-attr]
-
-    def _pick(self, mode: str) -> None:
-        self._mode = mode
-        self.accept()
-
-    def chosen_mode(self) -> str | None:
-        return self._mode
+# The only capture mode — stored in the DB "mode" column. (An Engineering
+# mode + a mode-select dialog used to exist here; both were removed.)
+MODE_MONITORING = "mode1"
 
 
 # ------------------------------------------------------------------ Save success
@@ -1522,20 +1416,14 @@ class _FuseSlotPanel(QFrame):
 
 # (slot_name, label, requires_fuse). 1st Ball = ball bond → fuse 2 frames.
 # 2nd Ball = weld/stitch bond → operator drops a single frame, no fuse.
-_MODE_SLOTS: dict[str, list[tuple[str, str, bool]]] = {
-    _ModeSelectDialog.MODE_SINGLE: [
-        ("1st Ball", "1st Ball", True),
-        ("2nd Ball", "2nd Ball", False),
-    ],
-    _ModeSelectDialog.MODE_TRIPLE: [
-        ("1st Ball", "1st Ball", True),
-        ("2nd Ball", "2nd Ball", False),
-    ],
-}
+_SLOTS: list[tuple[str, str, bool]] = [
+    ("1st Ball", "1st Ball", True),
+    ("2nd Ball", "2nd Ball", False),
+]
 
 
 class MainWindow(QMainWindow):
-    """Operator workflow: Sign in → choose mode → drop pairs → auto-fuse →
+    """Operator workflow: Sign in → drop pairs → auto-fuse →
     Confirm & Save → loop back to sign-in."""
 
     _file_ready_signal = pyqtSignal(str)
@@ -1559,7 +1447,7 @@ class MainWindow(QMainWindow):
 
         self._current_lot: LotDetail | None = None
         self._operator_badge: str = ""
-        self._mode: str = _ModeSelectDialog.MODE_SINGLE
+        self._mode: str = MODE_MONITORING
         self._slot_panels: list[_FuseSlotPanel] = []
 
         self.setWindowIcon(make_app_icon())
@@ -1765,7 +1653,7 @@ class MainWindow(QMainWindow):
                 w.deleteLater()
         self._slot_panels = []
 
-        slots = _MODE_SLOTS[self._mode]
+        slots = _SLOTS
         # Mode 1: one slot — centre it with stretch on either side and cap
         # the card width so it doesn't sprawl across the whole pane.
         # Mode 2: three slots — equal stretch, no caps, cards expand together.
@@ -1816,20 +1704,12 @@ class MainWindow(QMainWindow):
         sep = "<span style='color:#cbd5e1'>&nbsp;&nbsp;·&nbsp;&nbsp;</span>"
         self._head_secondary.setText(sep.join(chips))
 
-        if self._mode == _ModeSelectDialog.MODE_SINGLE:
-            self._mode_pill.setText("200X MONITORING  ·  1st + 2nd BALL")
-            self._mode_pill.setStyleSheet(
-                "QLabel { background: #eef2ff; color: #4338ca;"
-                " padding: 6px 14px; border-radius: 14px;"
-                " font-size: 11px; font-weight: 700; letter-spacing: 1px; }"
-            )
-        else:
-            self._mode_pill.setText("ENGINEERING LOT  ·  1st + 2nd BALL")
-            self._mode_pill.setStyleSheet(
-                "QLabel { background: #fef3c7; color: #92400e;"
-                " padding: 6px 14px; border-radius: 14px;"
-                " font-size: 11px; font-weight: 700; letter-spacing: 1px; }"
-            )
+        self._mode_pill.setText("200X MONITORING  ·  1st + 2nd BALL")
+        self._mode_pill.setStyleSheet(
+            "QLabel { background: #eef2ff; color: #4338ca;"
+            " padding: 6px 14px; border-radius: 14px;"
+            " font-size: 11px; font-weight: 700; letter-spacing: 1px; }"
+        )
         self._mode_pill.setVisible(True)
 
     def _refresh_confirm_state(self) -> None:
@@ -2133,18 +2013,16 @@ class MainWindow(QMainWindow):
         if self._watcher is None:
             self._arm_watcher()
 
-        QTimer.singleShot(50, self._show_mode_select)
+        QTimer.singleShot(50, self._begin_capture)
 
-    def _show_mode_select(self) -> None:
-        dlg = _ModeSelectDialog(parent=self)
-        dlg.exec()
-        chosen = dlg.chosen_mode() or _ModeSelectDialog.MODE_SINGLE
-        self._mode = chosen
+    def _begin_capture(self) -> None:
+        # 200X Monitoring is the only capture mode — go straight to capture
+        # after sign-in (no mode-select step).
+        self._mode = MODE_MONITORING
         self._rebuild_slot_grid()
         self._refresh_header()
         self.statusBar().showMessage(
-            "Engineering lot — drop pairs into 1st Ball and 2nd Ball; auto-fuses when both A+B are set"
-            if self._mode == _ModeSelectDialog.MODE_TRIPLE else
-            "200X Monitoring — drop pairs into 1st Ball and 2nd Ball; auto-fuses when both A+B are set",
+            "200X Monitoring — drop pairs into 1st Ball and 2nd Ball; "
+            "auto-fuses when both A+B are set",
             6000,
         )
