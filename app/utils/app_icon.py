@@ -19,7 +19,6 @@ from PyQt6.QtGui import (
     QIcon,
     QPainter,
     QPainterPath,
-    QPen,
     QPixmap,
 )
 

@@ -1,4 +1,4 @@
-"""Central SQL Server store for confirmed image captures (no measurement values).
+"""Central SQL Server store for confirmed image captures.
 
 One row in `captures` per Confirm event, plus N rows in `capture_files` for
 the fused images saved on the share folder. Mode 1 has 1 file row, Mode 2

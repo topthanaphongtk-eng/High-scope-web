@@ -41,7 +41,6 @@ from PyQt6.QtWidgets import (
 
 from app import __version__ as APP_VERSION
 from app.config import MssqlSettings, Settings
-from app.models.capture import CaptureRecord
 from app.models.lot import LotDetail
 from app.services.capture import FileWatcher
 from app.services.capture_db import CaptureDB
@@ -722,7 +721,7 @@ class _ModeSelectDialog(QDialog):
 
 class _SaveSuccessDialog(QDialog):
     """Frameless success popup shown after a Confirm. Lists the fused images
-    saved (filename + thumbnail) — no measurement values."""
+    saved (filename + thumbnail)."""
 
     def __init__(
         self,

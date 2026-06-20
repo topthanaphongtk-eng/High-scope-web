@@ -15,7 +15,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from PyQt6.QtCore import QBuffer, QIODevice
-from PyQt6.QtGui import QImage
 from PyQt6.QtWidgets import QApplication
 from PIL import Image
 
